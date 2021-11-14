@@ -1,0 +1,12 @@
+[package]
+name = "acat"
+version = "0.1.0"
+authors = ["Sergej Schumilo <sergej@schumilo.de>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fuzz_runner={path="../fuzz_runner"}
+colored = "2.0.0"
+clap="2.33.0"
