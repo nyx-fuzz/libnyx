@@ -4,7 +4,7 @@
 <img align="right" width="200"  src="logo.png">
 </p>
 
-libnyx is a library that allows you to simply build hypervisor based snapshot fuzzers. Using libnyx, managing multiple vms and snapshots as well as the communication with the code running in the VM becomes a matter of a handful of lines of code. At the moment, libnyx can be used via a simple C interface or from a rust library. 
+libnyx is a library that allows you to simply build hypervisor-based snapshot fuzzers. Using libnyx, managing multiple VMs and snapshots as well as the communication with the code running in the VM becomes a matter of a handful of lines of code. At the moment, libnyx can be used via a simple C interface or from a rust library. 
 
 ## Bug Reports and Contributions
 
