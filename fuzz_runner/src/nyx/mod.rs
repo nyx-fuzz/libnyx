@@ -36,7 +36,8 @@ pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fu
         dump_python_code_for_inputs: match fuzz_cfg.dump_python_code_for_inputs{
             None => false,
             Some(x) => x,
-        }
+        },
+        write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
     };
     let qemu_id =  fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_kernel(&fuzz_cfg.workdir_path, qemu_id, &params, fuzz_cfg.threads > 1);
@@ -75,7 +76,8 @@ pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig
         dump_python_code_for_inputs: match fuzz_cfg.dump_python_code_for_inputs{
             None => false,
             Some(x) => x,
-        }
+        },
+        write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
     };
     let qemu_id = fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_snapshot(&fuzz_cfg.workdir_path, qemu_id, fuzz_cfg.cpu_pin_start_at, &params, fuzz_cfg.threads > 1);
@@ -113,6 +115,7 @@ mod tests {
             bitmap_size: 0x1 << 16,
             debug: false,
             dump_python_code_for_inputs: false,
+            write_protected_input_buffer: false,
         };
         let qemu_id = 1;
         let qemu_params = QemuParams::new_from_kernel(workdir, qemu_id, &params);

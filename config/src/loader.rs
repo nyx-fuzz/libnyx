@@ -36,6 +36,9 @@ pub enum FuzzRunnerConfigLoader {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct FuzzerConfigLoader {
+    #[serde(default = "default_write_protected_input_buffer")]
+    pub write_protected_input_buffer: bool,
+
     pub workdir_path: Option<String>,
     pub bitmap_size: Option<usize>,
     pub mem_limit: Option<usize>,
@@ -49,6 +52,10 @@ pub struct FuzzerConfigLoader {
     pub snapshot_placement: Option<SnapshotPlacement>,
     pub dump_python_code_for_inputs: Option<bool>,
     pub exit_after_first_crash: Option<bool>,
+}
+
+fn default_write_protected_input_buffer() -> bool {
+    false
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -129,7 +129,8 @@ pub struct FuzzerConfig {
     pub dict: Vec<Vec<u8>>,
     pub snapshot_placement: SnapshotPlacement,
     pub dump_python_code_for_inputs: Option<bool>,
-    pub exit_after_first_crash: bool
+    pub exit_after_first_crash: bool,
+    pub write_protected_input_buffer: bool,
 }
 impl FuzzerConfig{
     pub fn new_from_loader(sharedir: &str, default: FuzzerConfigLoader, config: FuzzerConfigLoader) -> Self {
@@ -157,6 +158,7 @@ impl FuzzerConfig{
             snapshot_placement: config.snapshot_placement.or(default.snapshot_placement).expect("no snapshot_placement specified"),
             dump_python_code_for_inputs: config.dump_python_code_for_inputs.or(default.dump_python_code_for_inputs),
             exit_after_first_crash: config.exit_after_first_crash.unwrap_or(default.exit_after_first_crash.unwrap_or(false)),
+            write_protected_input_buffer: config.write_protected_input_buffer,
         }
     }
 }

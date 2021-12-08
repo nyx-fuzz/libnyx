@@ -11,6 +11,7 @@ pub struct KernelVmParams {
     pub debug: bool,
 
     pub dump_python_code_for_inputs: bool,
+    pub write_protected_input_buffer: bool,
 }
 
 pub struct SnapshotVmParams{
@@ -24,6 +25,7 @@ pub struct SnapshotVmParams{
     pub debug: bool,
 
     pub dump_python_code_for_inputs: bool,
+    pub write_protected_input_buffer: bool,
 }
 
 pub struct QemuParams {
@@ -39,6 +41,7 @@ pub struct QemuParams {
     pub payload_size: usize,
 
     pub dump_python_code_for_inputs: bool,
+    pub write_protected_input_buffer: bool,
 }
 
 impl QemuParams {
@@ -152,6 +155,7 @@ impl QemuParams {
             bitmap_size: params.bitmap_size,
             payload_size: (1 << 16),
             dump_python_code_for_inputs: params.dump_python_code_for_inputs,
+            write_protected_input_buffer: params.write_protected_input_buffer,
         };
     }
 
@@ -261,6 +265,7 @@ impl QemuParams {
             bitmap_size: params.bitmap_size,
             payload_size: (128 << 10),
             dump_python_code_for_inputs: params.dump_python_code_for_inputs,
+            write_protected_input_buffer: params.write_protected_input_buffer,
         };
     }
 }

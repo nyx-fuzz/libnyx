@@ -176,7 +176,13 @@ impl QemuProcess {
         let mut aux_buffer = AuxBuffer::new(aux_shm_f);
 
         aux_buffer.validate_header();
-        aux_buffer.config.protect_payload_buffer = 1;
+        if params.write_protected_input_buffer{
+            if params.qemu_id == 0 {
+                println!("[!] libnyx: input buffer is write protected");
+            }
+            aux_buffer.config.protect_payload_buffer = 1;
+            aux_buffer.config.changed = 1;
+        }
 
         loop {
             if aux_buffer.result.hprintf == 1 {
