@@ -39,6 +39,9 @@ pub struct FuzzerConfigLoader {
     #[serde(default = "default_write_protected_input_buffer")]
     pub write_protected_input_buffer: bool,
 
+    #[serde(default = "default_cow_primary_size")]
+    pub cow_primary_size: u64,
+
     pub workdir_path: Option<String>,
     pub bitmap_size: Option<usize>,
     pub mem_limit: Option<usize>,
@@ -56,6 +59,10 @@ pub struct FuzzerConfigLoader {
 
 fn default_write_protected_input_buffer() -> bool {
     false
+}
+
+fn default_cow_primary_size() -> u64 {
+    0
 }
 
 #[derive(Clone, Serialize, Deserialize)]

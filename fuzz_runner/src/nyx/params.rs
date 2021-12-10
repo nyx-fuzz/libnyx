@@ -12,6 +12,7 @@ pub struct KernelVmParams {
 
     pub dump_python_code_for_inputs: bool,
     pub write_protected_input_buffer: bool,
+    pub cow_primary_size: Option<u64>,
 }
 
 pub struct SnapshotVmParams{
@@ -26,6 +27,7 @@ pub struct SnapshotVmParams{
 
     pub dump_python_code_for_inputs: bool,
     pub write_protected_input_buffer: bool,
+    pub cow_primary_size: Option<u64>,
 }
 
 pub struct QemuParams {
@@ -42,6 +44,7 @@ pub struct QemuParams {
 
     pub dump_python_code_for_inputs: bool,
     pub write_protected_input_buffer: bool,
+    pub cow_primary_size: Option<u64>,
 }
 
 impl QemuParams {
@@ -108,6 +111,11 @@ impl QemuParams {
         nyx_ops += &format!(",worker_id={}", qemu_id);
         nyx_ops += &format!(",workdir={}", workdir);
         nyx_ops += &format!(",sharedir={}", params.sharedir);
+
+        if params.cow_primary_size.is_some(){
+            nyx_ops += &format!(",cow_primary_size={}", params.cow_primary_size.unwrap());
+        }
+
         //nyx_ops += &format!(",ip0_a=0x1000,ip0_b=0x7ffffffff000");
         //nyx_ops += &format!(",ip0_a=ffff800000000000,ip0_b=ffffffffffffffff");
 
@@ -156,6 +164,7 @@ impl QemuParams {
             payload_size: (1 << 16),
             dump_python_code_for_inputs: params.dump_python_code_for_inputs,
             write_protected_input_buffer: params.write_protected_input_buffer,
+            cow_primary_size: params.cow_primary_size,
         };
     }
 
@@ -227,6 +236,10 @@ impl QemuParams {
         nyx_ops += &format!(",workdir={}", workdir);
         nyx_ops += &format!(",sharedir={}", params.sharedir);
 
+        if params.cow_primary_size.is_some(){
+            nyx_ops += &format!(",cow_primary_size={}", params.cow_primary_size.unwrap());
+        }
+
         //nyx_ops += &format!(",ip0_a=0x1000,ip0_b=0x7ffffffff000");
         //nyx_ops += &format!(",ip0_a=ffff800000000000,ip0_b=ffffffffffffffff");
 
@@ -266,6 +279,7 @@ impl QemuParams {
             payload_size: (128 << 10),
             dump_python_code_for_inputs: params.dump_python_code_for_inputs,
             write_protected_input_buffer: params.write_protected_input_buffer,
+            cow_primary_size: params.cow_primary_size,
         };
     }
 }

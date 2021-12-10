@@ -131,6 +131,7 @@ pub struct FuzzerConfig {
     pub dump_python_code_for_inputs: Option<bool>,
     pub exit_after_first_crash: bool,
     pub write_protected_input_buffer: bool,
+    pub cow_primary_size: Option<u64>,
 }
 impl FuzzerConfig{
     pub fn new_from_loader(sharedir: &str, default: FuzzerConfigLoader, config: FuzzerConfigLoader) -> Self {
@@ -159,6 +160,7 @@ impl FuzzerConfig{
             dump_python_code_for_inputs: config.dump_python_code_for_inputs.or(default.dump_python_code_for_inputs),
             exit_after_first_crash: config.exit_after_first_crash.unwrap_or(default.exit_after_first_crash.unwrap_or(false)),
             write_protected_input_buffer: config.write_protected_input_buffer,
+            cow_primary_size: if config.cow_primary_size != 0 { Some( config.cow_primary_size as u64) } else { None },
         }
     }
 }
