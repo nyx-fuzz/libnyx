@@ -146,8 +146,11 @@ impl FuzzRunner for ForkServer {
 */
 impl FuzzRunner for QemuProcess {
     fn run_test(&mut self) -> Result<TestInfo, Box<dyn Error>> {
-        self.send_payload();
+        self.send_payload().unwrap();
         let ops_used = self.feedback_data.shared.interpreter.executed_opcode_num;
+        if self.aux.result.abort != 0 {
+            panic!("Abort called!\n");
+        }
         if self.aux.result.crash_found != 0 {
             return Ok(TestInfo {ops_used, exitreason: ExitReason::Crash(self.aux.misc.as_slice().to_vec())});
         }
@@ -169,7 +172,7 @@ impl FuzzRunner for QemuProcess {
 
     fn run_create_snapshot(&mut self) -> bool{
         assert_eq!(self.aux.result.tmp_snapshot_created,0);
-        self.send_payload();
+        self.send_payload().unwrap();
         return self.aux.result.tmp_snapshot_created == 1;
     }
 
@@ -177,7 +180,7 @@ impl FuzzRunner for QemuProcess {
         if self.aux.result.tmp_snapshot_created != 0 {
             self.aux.config.changed = 1;
             self.aux.config.discard_tmp_snapshot = 1;
-            self.send_payload();
+            self.send_payload().unwrap();
             if self.aux.result.tmp_snapshot_created != 0 {
                 println!("AUX BUFFER {:#?}",self.aux);
             }
@@ -190,7 +193,7 @@ impl FuzzRunner for QemuProcess {
     fn run_redqueen(&mut self) -> Result<RedqueenInfo, Box<dyn Error>> {
         self.aux.config.changed = 1;
         self.aux.config.redqueen_mode=1;
-        self.send_payload();
+        self.send_payload().unwrap();
         self.aux.config.changed = 1;
         self.aux.config.redqueen_mode=0;
         let rq_file = format!("{}/redqueen_workdir_{}/redqueen_results.txt",self.params.workdir,self.params.qemu_id);
@@ -201,7 +204,7 @@ impl FuzzRunner for QemuProcess {
         //println!("TRACE!!!!");
         self.aux.config.trace_mode=1;
         self.aux.config.changed = 1;
-        self.send_payload();
+        self.send_payload().unwrap();
         self.aux.config.changed = 1;
         self.aux.config.trace_mode=0;
         return Ok(CFGInfo {});

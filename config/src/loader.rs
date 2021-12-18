@@ -42,6 +42,15 @@ pub struct FuzzerConfigLoader {
     #[serde(default = "default_cow_primary_size")]
     pub cow_primary_size: u64,
 
+    #[serde(default = "default_ipt_filter")]
+    pub ip0: IptFilter,
+    #[serde(default = "default_ipt_filter")]
+    pub ip1: IptFilter,
+    #[serde(default = "default_ipt_filter")]
+    pub ip2: IptFilter,
+    #[serde(default = "default_ipt_filter")]
+    pub ip3: IptFilter,
+
     pub workdir_path: Option<String>,
     pub bitmap_size: Option<usize>,
     pub mem_limit: Option<usize>,
@@ -63,6 +72,13 @@ fn default_write_protected_input_buffer() -> bool {
 
 fn default_cow_primary_size() -> u64 {
     0
+}
+
+fn default_ipt_filter() -> IptFilter {
+    IptFilter{
+        a: 0,
+        b: 0,
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -18,6 +18,12 @@ fn into_absolute_path(path_to_sharedir: &str, path_to_file: String) -> String {
     }
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
+pub struct IptFilter {
+    pub a: u64,
+    pub b: u64,
+}
+
 #[derive(Clone)]
 pub struct QemuKernelConfig {
     pub qemu_binary: String,
@@ -132,6 +138,7 @@ pub struct FuzzerConfig {
     pub exit_after_first_crash: bool,
     pub write_protected_input_buffer: bool,
     pub cow_primary_size: Option<u64>,
+    pub ipt_filters: [IptFilter;4],
 }
 impl FuzzerConfig{
     pub fn new_from_loader(sharedir: &str, default: FuzzerConfigLoader, config: FuzzerConfigLoader) -> Self {
@@ -161,6 +168,12 @@ impl FuzzerConfig{
             exit_after_first_crash: config.exit_after_first_crash.unwrap_or(default.exit_after_first_crash.unwrap_or(false)),
             write_protected_input_buffer: config.write_protected_input_buffer,
             cow_primary_size: if config.cow_primary_size != 0 { Some( config.cow_primary_size as u64) } else { None },
+            ipt_filters: [
+                config.ip0,
+                config.ip1,
+                config.ip2,
+                config.ip3,
+            ],
         }
     }
 }
@@ -179,18 +192,38 @@ impl Config{
         }
     }
 
-    pub fn new_from_sharedir(sharedir: &str) -> Self {
+    pub fn new_from_sharedir(sharedir: &str) -> Result<Self, String> {
         let path_to_config = format!("{}/config.ron", sharedir);
-        let cfg_file = File::open(&path_to_config).expect("could not open config file");
-        let mut cfg: ConfigLoader = ron::de::from_reader(cfg_file).unwrap();
 
-        let default_path = into_absolute_path(sharedir, cfg.include_default_config_path.unwrap());
+        let cfg_file = match File::open(&path_to_config){
+            Ok(x) => {x},
+            Err(_) => return Err(format!("file or folder not found ({})!", path_to_config)),
+        }; 
+
+        let mut cfg: ConfigLoader = match ron::de::from_reader(cfg_file){
+            Ok(x) => {x},
+            Err(x) => return Err(format!("invalid configuration ({})!", x)),
+        };
+
+        let include_default_config_path = match cfg.include_default_config_path{
+            Some(x) => {x},
+            None => return Err(format!("no path to default configuration given!")),
+        };
+
+        let default_path = into_absolute_path(sharedir, include_default_config_path);
         let default_config_folder = Path::new(&default_path).parent().unwrap().to_str().unwrap();
         cfg.include_default_config_path = Some(default_path.clone());
 
-        let default_file = File::open(cfg.include_default_config_path.as_ref().expect("no default config given")).expect("could not open config file");
-        let default: ConfigLoader = ron::de::from_reader(default_file).unwrap();
+        let default_file = match File::open(default_path.clone()){
+            Ok(x) => x,
+            Err(_) => return Err(format!("default config not found ({})!", default_path)),
+        };
+         
+        let default: ConfigLoader = match ron::de::from_reader(default_file){
+            Ok(x) => {x},
+            Err(x) => return Err(format!("invalid default configuration ({})!", x)),
+        };
 
-        Self::new_from_loader(&sharedir, &default_config_folder, default, cfg)
+        Ok(Self::new_from_loader(&sharedir, &default_config_folder, default, cfg))
     }
 }

@@ -24,7 +24,7 @@ fn into_absolute_path(sharedir: &str) -> String{
     }
 }
 
-pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fuzz_cfg: &FuzzerConfig) -> qemu_process::QemuProcess {
+pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fuzz_cfg: &FuzzerConfig) -> Result<QemuProcess, String> {
     let params = params::KernelVmParams {
         qemu_binary: cfg.qemu_binary.to_string(),
         kernel: cfg.kernel.to_string(),
@@ -39,6 +39,7 @@ pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fu
         },
         write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
         cow_primary_size: fuzz_cfg.cow_primary_size, 
+        ipt_filters: fuzz_cfg.ipt_filters,
     };
     let qemu_id =  fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_kernel(&fuzz_cfg.workdir_path, qemu_id, &params, fuzz_cfg.threads > 1);
@@ -51,7 +52,7 @@ pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fu
     return qemu_process::QemuProcess::new(qemu_params);
 }
 
-pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig,  fuzz_cfg: &FuzzerConfig) -> qemu_process::QemuProcess {
+pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig,  fuzz_cfg: &FuzzerConfig) -> Result<QemuProcess, String> {
 
     let snapshot_path = match &cfg.snapshot_path{
         SnapshotPath::Create(_x) => panic!(),
@@ -80,6 +81,7 @@ pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig
         },
         write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
         cow_primary_size: fuzz_cfg.cow_primary_size, 
+        ipt_filters: fuzz_cfg.ipt_filters,
     };
     let qemu_id = fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_snapshot(&fuzz_cfg.workdir_path, qemu_id, fuzz_cfg.cpu_pin_start_at, &params, fuzz_cfg.threads > 1);

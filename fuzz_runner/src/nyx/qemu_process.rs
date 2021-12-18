@@ -1,6 +1,7 @@
 use core::ffi::c_void;
 use nix::sys::mman::*;
 use std::fs;
+use std::io;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::os::unix::fs::symlink;
@@ -31,21 +32,23 @@ pub struct QemuProcess {
     pub bitmap: &'static mut [u8],
     pub payload: &'static mut [u8],
     pub params: QemuParams,
-    hprintf_log: File,
 }
 
-fn execute_qemu(ctrl: &mut UnixStream) {
-    ctrl.write_all(&[120_u8]).unwrap();
+fn execute_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
+    ctrl.write_all(&[120_u8])?;
+    Ok(())
 }
 
-fn wait_qemu(ctrl: &mut UnixStream) {
+fn wait_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
     let mut buf = [0];
-    ctrl.read_exact(&mut buf).unwrap();
+    ctrl.read_exact(&mut buf)?;
+    Ok(())
 }
 
-fn run_qemu(ctrl: &mut UnixStream) {
-    execute_qemu(ctrl);
-    wait_qemu(ctrl);
+fn run_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
+    execute_qemu(ctrl)?;
+    wait_qemu(ctrl)?;
+    Ok(())
 }
 
 fn make_shared_data(file: File, size: usize) -> &'static mut [u8] {
@@ -69,7 +72,7 @@ fn make_shared_ijon_data(file: File, size: usize) -> FeedbackBuffer {
 }
 
 impl QemuProcess {
-    pub fn new(params: QemuParams) -> QemuProcess {
+    pub fn new(params: QemuParams) -> Result<QemuProcess, String> {
         Self::prepare_redqueen_workdir(&params.workdir, params.qemu_id);
 
         if params.qemu_id == 0{
@@ -89,11 +92,20 @@ impl QemuProcess {
             .open(&params.payload_filename)
             .expect("couldn't open payload file");
 
+        if Path::new(&format!("{}/bitmap_{}", params.workdir, params.qemu_id)).exists(){
+            fs::remove_file(format!("{}/bitmap_{}", params.workdir, params.qemu_id)).unwrap();
+        }
+
         symlink(
             &params.bitmap_filename,
             format!("{}/bitmap_{}", params.workdir, params.qemu_id),
         )
         .unwrap();
+
+        if Path::new(&format!("{}/payload_{}", params.workdir, params.qemu_id)).exists(){
+            fs::remove_file(format!("{}/payload_{}", params.workdir, params.qemu_id)).unwrap();
+        }
+
         symlink(
             &params.payload_filename,
             format!("{}/payload_{}", params.workdir, params.qemu_id),
@@ -123,7 +135,7 @@ impl QemuProcess {
         thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
 
 
-        let child = if params.dump_python_code_for_inputs{
+        let mut child = if params.dump_python_code_for_inputs{
             Command::new(&params.cmd[0])
             .args(&params.cmd[1..])
             .env("DUMP_PAYLOAD_MODE", "TRUE")
@@ -159,7 +171,9 @@ impl QemuProcess {
 
         // dry_run
         //println!("TRHEAD {} run QEMU initial",params.qemu_id);
-        run_qemu(&mut control);
+        if run_qemu(&mut control).is_err() {
+            return Err(format!("cannot launch QEMU-Nyx..."));
+        }
 
         let aux_shm_f = OpenOptions::new()
             .read(true)
@@ -175,7 +189,14 @@ impl QemuProcess {
             .expect("couldn't open aux buffer file");
         let mut aux_buffer = AuxBuffer::new(aux_shm_f);
 
-        aux_buffer.validate_header();
+        match aux_buffer.validate_header(){
+            Err(x) => {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                return Err(x);
+            },
+            Ok(_) => {},
+        }
         if params.write_protected_input_buffer{
             if params.qemu_id == 0 {
                 println!("[!] libnyx: input buffer is write protected");
@@ -185,22 +206,30 @@ impl QemuProcess {
         }
 
         loop {
+            if aux_buffer.result.abort == 1 {
+                let len = aux_buffer.misc.len;
+                let msg = format!("agent abort() -> \n\t{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).red());
+
+                /* get rid of this process */
+                child.kill().unwrap();
+                child.wait().unwrap();
+
+                return Err(msg);
+            }
+
             if aux_buffer.result.hprintf == 1 {
                 let len = aux_buffer.misc.len;
                 print!("{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).yellow());
-            }
-            else{
-                //println!("QEMU NOT READY");
-            }
+            } 
 
             if aux_buffer.result.state == 3 {
                 break;
             }
-            //println!("QEMU NOT READY");
-            //println!("TRHEAD {} run QEMU NOT READY",params.qemu_id);
-            run_qemu(&mut control);
+            if run_qemu(&mut control).is_err(){
+                return Err(format!("failed to establish fuzzing loop..."));
+            } 
+            //run_qemu(&mut control).unwrap();
         }
-        //println!("QEMU READY");
         println!("[!] libnyx: qemu #{} is ready:", params.qemu_id);
 
         aux_buffer.config.reload_mode = 1;
@@ -208,16 +237,7 @@ impl QemuProcess {
         aux_buffer.config.timeout_usec = 500_000;
         aux_buffer.config.changed = 1;
 
-        //run_qemu(&mut control);
-        //run_qemu(&mut control);
-
-        let mut option = OpenOptions::new();
-        option.read(true);
-        option.write(true);
-        option.create(true);
-        let hprintf_log = option.open(format!("{}/hprintf_log_{}", params.workdir, params.qemu_id)).unwrap(); 
-
-        return QemuProcess {
+        return Ok(QemuProcess {
             process: child,
             aux: aux_buffer,
             feedback_data: ijon_shared,
@@ -225,49 +245,32 @@ impl QemuProcess {
             bitmap: bitmap_shared,
             payload: payload_shared,
             params,
-            hprintf_log,
-        };
+        });
     }
 
 
-    pub fn send_payload(&mut self) {
+    pub fn send_payload(&mut self) -> io::Result<()>{
         let mut old_address: u64 = 0;
-        //use rand::Rng;
-        //println!("RUN INPUT");
-        //std::thread::sleep(std::time::Duration::from_secs(1));
-        //let time = std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH).unwrap().as_nanos();
-        //self.hprintf_log.write_all(&format!("===({})===\n", time).as_bytes()).unwrap();
+
         loop {
             mem_barrier();
-            run_qemu(&mut self.ctrl);
+            match run_qemu(&mut self.ctrl) {
+                Err(x) => return Err(x),
+                Ok(_) => {},
+            }
             mem_barrier();
 
-            if self.aux.result.hprintf != 0 {
-                self.hprintf_log.write_all(&format!("{}\n", self.aux.misc.as_string()).as_bytes()).unwrap();
-                //println!("HPRINTF {}", self.aux.misc.as_string());
+            if self.aux.result.hprintf == 1 {
                 let len = self.aux.misc.len;
-
-                
-
                 print!("{}", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).yellow());
-                //print!("{}", "".clear());
-                println!("TEST\n");
-
                 continue;
             }
-            //println!("pt trace size {:x} bytes",self.aux.result.pt_trace_size);
-            //println!("{:} dirty pages",self.aux.result.dirty_pages);
-            //println!("interpreter ran {} ops",self.feedback_data.shared.interpreter.executed_opcode_num);
-            //let max_v = 0;
-            //let max_i = 0;
-            //for (i,v) in self.feedback_data.shared.ijon.max_data.iter().enumerate(){
-            //    if *v > max_v{
-            //        max_v=*v;
-            //        max_i=i;
-            //        
-            //    }
-            //}
-            //println!("found IJON MAX: {}\t{:x}",max_i,max_v);
+
+            if self.aux.result.abort == 1 {
+                let len = self.aux.misc.len;
+                println!("[!] libnyx: agent abort() -> \"{}\"", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).red());
+                break;
+            }
 
             if self.aux.result.success != 0 || self.aux.result.crash_found != 0 || self.aux.result.asan_found != 0 || self.aux.result.payload_write_attempt_found != 0 {
                 break;
@@ -284,15 +287,8 @@ impl QemuProcess {
                 self.aux.config.page_dump_mode = 1;
                 self.aux.config.changed = 1;
             } 
-            //else {
-            //    break;
-            //}
-
         }
-        //std::thread::sleep(std::time::Duration::from_secs(1));
-        //if self.aux.result.tmp_snapshot_created != 0 {
-        //    //println!("created snapshot!!!!!!\n");
-        //}
+        Ok(())
     }
 
     pub fn set_timeout(&mut self, timeout: std::time::Duration){
@@ -306,9 +302,24 @@ impl QemuProcess {
     }
 
     pub fn shutdown(&mut self) {
-        println!("Let's kill QEMU!");
+        println!("[!] libnyx: sending SIGKILL to QEMU-Nyx process...");
         self.process.kill().unwrap();
         self.wait();
+    }
+
+    pub fn wait_for_workdir(workdir: &str){
+        println!("[!] libnyx: waiting for workdir to be created by parent process...");
+        
+        let files = vec![
+            "page_cache.lock",
+            "page_cache.addr",
+            "page_cache.addr",
+        ];
+        for file in files.iter() {
+            while !Path::new(&format!("{}/{}", workdir, file)).exists(){
+                thread::sleep(time::Duration::from_secs(1));
+            }
+        }
     }
 
     pub fn prepare_workdir(workdir: &str, seed_path: Option<String>) {

@@ -16,11 +16,13 @@ pub enum NyxReturnValue {
     Asan,
     Timout,
     InvalidWriteToPayload,
-    Error
+    Error,
+    IoError,    // QEMU process has died for some reason
+    Abort,      // Abort hypercall called
 }
 
 #[no_mangle]
-pub extern "C" fn nyx_new(sharedir: *const c_char, workdir: *const c_char, worker_id: u32, create_snapshot: bool) -> * mut QemuProcess {
+pub extern "C" fn nyx_new(sharedir: *const c_char, workdir: *const c_char, worker_id: u32, cpu_id: u32, create_snapshot: bool) -> * mut QemuProcess {
     let sharedir_c_str = unsafe {
         assert!(!sharedir.is_null());
         CStr::from_ptr(sharedir)
@@ -35,18 +37,20 @@ pub extern "C" fn nyx_new(sharedir: *const c_char, workdir: *const c_char, worke
     let sharedir_r_str = sharedir_c_str.to_str().unwrap();
     let workdir_r_str = workdir_c_str.to_str().unwrap();
 
-    println!("r_str: {}", sharedir_r_str);
-    let cfg: Config = Config::new_from_sharedir(&sharedir_r_str);
-    println!("config {}", cfg.fuzz.bitmap_size);
-
-
+    let cfg: Config = match Config::new_from_sharedir(&sharedir_r_str){
+        Ok(x) => x,
+        Err(msg) => {
+            println!("[!] libnyx config reader error: {}", msg);
+            return std::ptr::null_mut() as *mut QemuProcess;
+        }
+    };
 
     let mut config = cfg.fuzz;
     let runner_cfg = cfg.runner;
 
 
     /* todo: add sanity check */
-    config.cpu_pin_start_at = worker_id as usize;
+    config.cpu_pin_start_at = cpu_id as usize;
 
     config.thread_id = worker_id as usize;
     config.threads = if create_snapshot { 2 as usize } else { 1 as usize };
@@ -59,16 +63,25 @@ pub extern "C" fn nyx_new(sharedir: *const c_char, workdir: *const c_char, worke
     if worker_id == 0 {
         QemuProcess::prepare_workdir(&config.workdir_path, config.seed_path.clone());
     }
+    else{
+        QemuProcess::wait_for_workdir(&config.workdir_path);
+    }
 
-    match runner_cfg.clone() {
+    let runner = match runner_cfg.clone() {
         FuzzRunnerConfig::QemuSnapshot(cfg) => {
-            let runner = qemu_process_new_from_snapshot(sdir.to_string(), &cfg, &config);
-            return Box::into_raw(Box::new(runner));
-        }
+            qemu_process_new_from_snapshot(sdir.to_string(), &cfg, &config)            
+        },
         FuzzRunnerConfig::QemuKernel(cfg) => {
-            let runner = qemu_process_new_from_kernel(sdir.to_string(), &cfg, &config);
-            return Box::into_raw(Box::new(runner));
+            qemu_process_new_from_kernel(sdir.to_string(), &cfg, &config)
         }
+    };
+    
+    match runner {
+        Ok(x) => Box::into_raw(Box::new(x)),
+        Err(msg) => {
+            println!("[!] libnyx failed to initialize QEMU-Nyx: {}", msg);
+            std::ptr::null_mut() as *mut QemuProcess
+        },
     }
 }
 
@@ -101,6 +114,15 @@ pub extern "C" fn nyx_get_bitmap_buffer(qemu_process: * mut QemuProcess) -> *mut
         assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
 
         return (*qemu_process).bitmap.as_mut_ptr();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn nyx_get_bitmap_buffer_size(qemu_process: * mut QemuProcess) -> usize {
+    unsafe{
+        assert!(!qemu_process.is_null());
+        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
+        return (*qemu_process).bitmap.len();
     }
 }
 
@@ -152,25 +174,30 @@ pub extern "C" fn nyx_exec(qemu_process: * mut QemuProcess) -> NyxReturnValue {
         assert!(!qemu_process.is_null());
         assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
 
-        (*qemu_process).send_payload();
-
-        if (*qemu_process).aux.result.crash_found != 0 {
-            return NyxReturnValue::Crash;
+        match (*qemu_process).send_payload(){
+            Err(_) => return  NyxReturnValue::IoError,
+            Ok(_) => {
+                if (*qemu_process).aux.result.abort != 0 {
+                    return  NyxReturnValue::Abort;
+                }
+                if (*qemu_process).aux.result.crash_found != 0 {
+                    return NyxReturnValue::Crash;
+                }
+                if (*qemu_process).aux.result.asan_found != 0 {
+                    return NyxReturnValue::Asan;
+                }
+                if (*qemu_process).aux.result.timeout_found != 0 {
+                    return NyxReturnValue::Timout;
+                }
+                if (*qemu_process).aux.result.payload_write_attempt_found != 0 {
+                    return NyxReturnValue::InvalidWriteToPayload;
+                }
+                if (*qemu_process).aux.result.success != 0 {
+                    return NyxReturnValue::Normal;
+                }
+                return NyxReturnValue::Error;
+            }
         }
-        if (*qemu_process).aux.result.asan_found != 0 {
-            return NyxReturnValue::Asan;
-        }
-        if (*qemu_process).aux.result.timeout_found != 0 {
-            return NyxReturnValue::Timout;
-        }
-        if (*qemu_process).aux.result.payload_write_attempt_found != 0 {
-            return NyxReturnValue::InvalidWriteToPayload;
-        }
-        if (*qemu_process).aux.result.success != 0 {
-            return NyxReturnValue::Normal;
-        }
-        println!("unknown exeuction result!!");
-        return NyxReturnValue::Error;
     }
 }
 

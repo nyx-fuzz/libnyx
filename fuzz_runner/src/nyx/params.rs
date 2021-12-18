@@ -1,5 +1,6 @@
 use std::path::Path;
 use crate::config::SnapshotPath;
+use crate::config::IptFilter;
 
 pub struct KernelVmParams {
     pub qemu_binary: String,
@@ -13,6 +14,7 @@ pub struct KernelVmParams {
     pub dump_python_code_for_inputs: bool,
     pub write_protected_input_buffer: bool,
     pub cow_primary_size: Option<u64>,
+    pub ipt_filters: [IptFilter; 4],
 }
 
 pub struct SnapshotVmParams{
@@ -28,6 +30,8 @@ pub struct SnapshotVmParams{
     pub dump_python_code_for_inputs: bool,
     pub write_protected_input_buffer: bool,
     pub cow_primary_size: Option<u64>,
+    pub ipt_filters: [IptFilter; 4],
+
 }
 
 pub struct QemuParams {
@@ -50,7 +54,6 @@ pub struct QemuParams {
 impl QemuParams {
     pub fn new_from_snapshot(workdir: &str, qemu_id: usize, cpu: usize, params: &SnapshotVmParams, create_snapshot_file: bool) -> QemuParams{
     
-        assert!(!(!create_snapshot_file && qemu_id == 1));
         let project_name = Path::new(workdir)
         .file_name()
         .expect("Couldn't get project name from workdir!")
@@ -112,12 +115,18 @@ impl QemuParams {
         nyx_ops += &format!(",workdir={}", workdir);
         nyx_ops += &format!(",sharedir={}", params.sharedir);
 
+        
+        let mut i = 0;
+        for filter in params.ipt_filters{
+            if filter.a != 0 && filter.b != 0 {
+                nyx_ops += &format!(",ip{}_a={},ip{}_b={}", i, filter.a, i, filter.b);
+            i += 1;
+            }
+        }
+
         if params.cow_primary_size.is_some(){
             nyx_ops += &format!(",cow_primary_size={}", params.cow_primary_size.unwrap());
         }
-
-        //nyx_ops += &format!(",ip0_a=0x1000,ip0_b=0x7ffffffff000");
-        //nyx_ops += &format!(",ip0_a=ffff800000000000,ip0_b=ffffffffffffffff");
 
         cmd.push(nyx_ops);
 
@@ -171,7 +180,6 @@ impl QemuParams {
     pub fn new_from_kernel(workdir: &str, qemu_id: usize, params: &KernelVmParams, create_snapshot_file: bool) -> QemuParams {
         //prepare_working_dir(workdir)
 
-        assert!(!(!create_snapshot_file && qemu_id == 1));
         let project_name = Path::new(workdir)
             .file_name()
             .expect("Couldn't get project name from workdir!")
@@ -236,12 +244,17 @@ impl QemuParams {
         nyx_ops += &format!(",workdir={}", workdir);
         nyx_ops += &format!(",sharedir={}", params.sharedir);
 
+        let mut i = 0;
+        for filter in params.ipt_filters{
+            if filter.a != 0 && filter.b != 0 {
+                nyx_ops += &format!(",ip{}_a={:x},ip{}_b={:x}", i, filter.a, i, filter.b);
+            i += 1;
+            }
+        }
+
         if params.cow_primary_size.is_some(){
             nyx_ops += &format!(",cow_primary_size={}", params.cow_primary_size.unwrap());
         }
-
-        //nyx_ops += &format!(",ip0_a=0x1000,ip0_b=0x7ffffffff000");
-        //nyx_ops += &format!(",ip0_a=ffff800000000000,ip0_b=ffffffffffffffff");
 
         cmd.push(nyx_ops);
 

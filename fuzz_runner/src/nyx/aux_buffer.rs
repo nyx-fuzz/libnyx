@@ -17,7 +17,8 @@ use derivative::Derivative;
 const AUX_BUFFER_SIZE: usize = 4096;
 
 const AUX_MAGIC: u64 = 0x54502d554d4551_u64;
-const QEMU_PT_VERSION: u16 = 1; /* let's start at 1 for the initial version using the aux buffer */
+const QEMU_PT_VERSION: u16 = 2; /* let's start at 1 for the initial version using the aux buffer */
+const QEMU_PT_HASH: u16 = 82;
 
 const HEADER_SIZE: usize = 128;
 const CAP_SIZE: usize = 256;
@@ -82,14 +83,21 @@ impl AuxBuffer {
         return AuxBuffer::new_readonly(file, false);
     }
 
-    pub fn validate_header(&self) {
+    pub fn validate_header(&self) -> Result<(), String> {
         mem_barrier();
         let mgc = self.header.magic;
-        assert_eq!(mgc, AUX_MAGIC);
+        if mgc != AUX_MAGIC {
+            return Err(format!("aux buffer magic mismatch {} != {}...\n[!] Probably the AUX buffer is corrupted?!", AUX_MAGIC, mgc));
+        }
         let version = self.header.version;
-        assert_eq!(version, QEMU_PT_VERSION);
+        if version != QEMU_PT_VERSION {
+            return Err(format!("aux buffer version mismatch {} != {}...\n[!] You are probably using either an outdated version of libnyx or QEMU-Nyx...", QEMU_PT_VERSION, version));
+        }
         let hash = self.header.hash;
-        assert_eq!(hash, 81);
+        if hash != QEMU_PT_HASH {
+            return Err(format!("aux buffer hash mismatch {} != {}...\n[!] You are probably using either an outdated version of libnyx or QEMU-Nyx...", QEMU_PT_HASH, hash));
+        }
+        Ok(())
     }
 }
 #[derive(Debug, Copy, Clone)]
@@ -176,7 +184,7 @@ pub struct auxilary_buffer_result_s {
     pub dirty_pages: u32,
     pub pt_trace_size: u32, 
     pub payload_write_attempt_found: u8,
-
+    pub abort: u8,
 }
 
 #[repr(C, packed(1))]
