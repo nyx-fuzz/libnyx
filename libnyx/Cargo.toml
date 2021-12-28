@@ -5,7 +5,7 @@ edition = "2018"
 
 [lib]
 name = "libnyx"
-crate-type = ["staticlib"]  
+crate-type = ["staticlib", "dylib"]
 
 [build-dependencies]
 cbindgen = "0.19"
