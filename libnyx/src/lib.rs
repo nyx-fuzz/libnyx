@@ -127,6 +127,15 @@ pub extern "C" fn nyx_get_bitmap_buffer_size(qemu_process: * mut QemuProcess) ->
 }
 
 #[no_mangle]
+pub extern "C" fn nyx_set_bitmap_buffer_size(qemu_process: * mut QemuProcess, map_size: u32) {
+    unsafe{
+        assert!(!qemu_process.is_null());
+        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
+        (*qemu_process).update_bitmap_size(map_size as usize);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn nyx_shutdown(qemu_process: * mut QemuProcess) {
     unsafe{
         assert!(!qemu_process.is_null());

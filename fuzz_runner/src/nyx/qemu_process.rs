@@ -248,6 +248,40 @@ impl QemuProcess {
         });
     }
 
+    pub fn update_bitmap_size(&mut self, bitmap_size: usize) {
+
+        if bitmap_size <= self.params.bitmap_size {
+            self.params.bitmap_size = bitmap_size;
+            return;
+        }
+
+        // TODO: remove old shared map first!!
+
+        self.params.bitmap_size = bitmap_size;
+
+        let bitmap_shm_f = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&self.params.bitmap_filename)
+            .expect("couldn't open bitmap file");
+
+        if Path::new(&format!("{}/bitmap_{}", self.params.workdir, self.params.qemu_id)).exists(){
+            fs::remove_file(format!("{}/bitmap_{}", self.params.workdir, self.params.qemu_id)).unwrap();
+        }
+
+        symlink(
+            &self.params.bitmap_filename,
+            format!("{}/bitmap_{}", self.params.workdir, self.params.qemu_id),
+        )
+        .unwrap();
+
+        bitmap_shm_f.set_len(self.params.bitmap_size as u64).unwrap();
+
+        let bitmap_shared = make_shared_data(bitmap_shm_f, self.params.bitmap_size);
+        self.bitmap = bitmap_shared;
+
+    }
 
     pub fn send_payload(&mut self) -> io::Result<()>{
         let mut old_address: u64 = 0;
