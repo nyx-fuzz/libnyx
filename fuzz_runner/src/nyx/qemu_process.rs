@@ -255,6 +255,15 @@ impl QemuProcess {
             return;
         }
 
+        let mut bitmap_size = bitmap_size;
+
+        // important: afl++ coverage maps must have full 64 byte chunks
+        if bitmap_size % 64 > 0 {
+
+            bitmap_size = ((bitmap_size + 64) >> 6) << 6;
+
+        }
+
         // TODO: remove old shared map first!!
 
         self.params.bitmap_size = bitmap_size;
