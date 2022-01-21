@@ -491,19 +491,34 @@ impl QemuProcess {
             path.push("lock");
             if path.exists(){
 
-                let file_lock = OpenOptions::new()
+                let file_lock = match OpenOptions::new()
                     .read(true)
-                    .open(&path)
-                    .expect("couldn't open shm work dir lock file");
+                    .open(&path){
+                        Err(x) => {
+                            println!("Warning: {}", x);
+                            Err(x)
+                        },
+                        x => {
+                            x
+                        },
+                    };
 
-                path.pop();
-                match file_lock.try_lock_exclusive(){
-                    Ok(_) => {
-                        if path.starts_with("/dev/shm/") {
-                            fs::remove_dir_all(path).unwrap();
-                        }
-                    },
-                    Err(_) => {},
+                if file_lock.is_ok(){
+                    path.pop();
+
+                    match file_lock.unwrap().try_lock_exclusive(){
+                        Ok(_) => {
+                            if path.starts_with("/dev/shm/") {
+                                match fs::remove_dir_all(path){
+                                    Err(x) => {
+                                        println!("Warning: {}", x);
+                                    },
+                                    _ => {},
+                                }
+                            }
+                        },
+                        Err(_) => {},
+                    }
                 }
             }
         }
