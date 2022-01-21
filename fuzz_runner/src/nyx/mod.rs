@@ -40,6 +40,7 @@ pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fu
         write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
         cow_primary_size: fuzz_cfg.cow_primary_size, 
         ipt_filters: fuzz_cfg.ipt_filters,
+        input_buffer_size: fuzz_cfg.input_buffer_size,
     };
     let qemu_id =  fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_kernel(&fuzz_cfg.workdir_path, qemu_id, &params, fuzz_cfg.threads > 1);
@@ -82,17 +83,10 @@ pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig
         write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
         cow_primary_size: fuzz_cfg.cow_primary_size, 
         ipt_filters: fuzz_cfg.ipt_filters,
+        input_buffer_size: fuzz_cfg.input_buffer_size,
     };
     let qemu_id = fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_snapshot(&fuzz_cfg.workdir_path, qemu_id, fuzz_cfg.cpu_pin_start_at, &params, fuzz_cfg.threads > 1);
-    
-    /*
-    if qemu_id == 0{
-        println!("------> WIPING EVERYTHING");
-        qemu_process::QemuProcess::prepare_workdir(&fuzz_cfg.workdir_path, fuzz_cfg.seed_pattern.clone());
-        println!("------> WIPING EVERYTHING DONE");
-    }
-    */
 
     return qemu_process::QemuProcess::new(qemu_params);
 }

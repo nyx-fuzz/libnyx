@@ -1,4 +1,5 @@
 use core::ffi::c_void;
+use std::path::PathBuf;
 use nix::sys::mman::*;
 use std::fs;
 use std::io;
@@ -6,11 +7,16 @@ use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::os::unix::fs::symlink;
 use std::os::unix::io::IntoRawFd;
+use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::process::Child;
 use std::process::Command;
 use std::{thread, time};
+use std::process;
+use fs4::FileExt;
+
+use nix::unistd::gettid;
 
 use std::str;
 
@@ -20,6 +26,8 @@ use colored::*;
 
 
 use crate::nyx::aux_buffer::AuxBuffer;
+use crate::nyx::aux_buffer::{NYX_SUCCESS, NYX_CRASH, NYX_HPRINTF, NYX_TIMEOUT, NYX_ABORT, NYX_INPUT_WRITE};
+
 use crate::nyx::ijon_data::{SharedFeedbackData, FeedbackBuffer};
 use crate::nyx::mem_barrier::mem_barrier;
 use crate::nyx::params::QemuParams;
@@ -28,10 +36,16 @@ pub struct QemuProcess {
     pub process: Child,
     pub aux: AuxBuffer,
     pub feedback_data: FeedbackBuffer,
+    pub ijon_buffer: &'static mut [u8],
     pub ctrl: UnixStream,
     pub bitmap: &'static mut [u8],
+    pub bitmap_size: usize,
+    pub input_buffer_size: usize,
     pub payload: &'static mut [u8],
     pub params: QemuParams,
+    shm_work_dir: PathBuf,
+    #[allow(unused)]
+    shm_file_lock: File,
 }
 
 fn execute_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
@@ -51,11 +65,11 @@ fn run_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
     Ok(())
 }
 
-fn make_shared_data(file: File, size: usize) -> &'static mut [u8] {
+fn make_shared_data(file: &File, size: usize) -> &'static mut [u8] {
     let prot = ProtFlags::PROT_READ | ProtFlags::PROT_WRITE;
     let flags = MapFlags::MAP_SHARED;
     unsafe {
-        let ptr = mmap(0 as *mut c_void, size, prot, flags, file.into_raw_fd(), 0).unwrap();
+        let ptr = mmap(0 as *mut c_void, size, prot, flags, file.as_raw_fd(), 0).unwrap();
 
         let data = std::slice::from_raw_parts_mut(ptr as *mut u8, size);
         return data;
@@ -66,12 +80,13 @@ fn make_shared_ijon_data(file: File, size: usize) -> FeedbackBuffer {
     let prot = ProtFlags::PROT_READ | ProtFlags::PROT_WRITE;
     let flags = MapFlags::MAP_SHARED;
     unsafe {
-        let ptr = mmap(std::ptr::null_mut::<c_void>(), 0x1000, prot, flags, file.into_raw_fd(), size as i64).unwrap();
+        let ptr = mmap(std::ptr::null_mut::<c_void>(), size, prot, flags, file.into_raw_fd(), 0).unwrap();
         FeedbackBuffer::new((ptr as *mut SharedFeedbackData).as_mut().unwrap())
     }
 }
 
 impl QemuProcess {
+
     pub fn new(params: QemuParams) -> Result<QemuProcess, String> {
         Self::prepare_redqueen_workdir(&params.workdir, params.qemu_id);
 
@@ -79,55 +94,79 @@ impl QemuProcess {
             println!("[!] libnyx: spawning qemu with:\n {}", params.cmd.join(" "));
         }
 
+        let (shm_work_dir, file_lock) = Self::create_shm_work_dir();
+        let mut shm_work_dir_path = PathBuf::from(&shm_work_dir);
+
+        shm_work_dir_path.push("bitmap");
+
         let bitmap_shm_f = OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
-            .open(&params.bitmap_filename)
+            .open(&shm_work_dir_path)
             .expect("couldn't open bitmap file");
-        let mut payload_shm_f = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&params.payload_filename)
-            .expect("couldn't open payload file");
+
 
         if Path::new(&format!("{}/bitmap_{}", params.workdir, params.qemu_id)).exists(){
             fs::remove_file(format!("{}/bitmap_{}", params.workdir, params.qemu_id)).unwrap();
         }
 
         symlink(
-            &params.bitmap_filename,
+            &shm_work_dir_path,
             format!("{}/bitmap_{}", params.workdir, params.qemu_id),
         )
         .unwrap();
+
+        shm_work_dir_path.pop();
+        shm_work_dir_path.push("ijon");
+
+        let ijon_buffer_shm_f = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&shm_work_dir_path)
+            .expect("couldn't open bitmap file");
+
+
+        if Path::new(&format!("{}/ijon_{}", params.workdir, params.qemu_id)).exists(){
+            fs::remove_file(format!("{}/ijon_{}", params.workdir, params.qemu_id)).unwrap();
+        }
+
+        symlink(
+            &shm_work_dir_path,
+            format!("{}/ijon_{}", params.workdir, params.qemu_id),
+        )
+        .unwrap();
+
+        shm_work_dir_path.pop();
+        shm_work_dir_path.push("input");
+
+        let mut payload_shm_f = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&shm_work_dir_path)
+            .expect("couldn't open payload file");
 
         if Path::new(&format!("{}/payload_{}", params.workdir, params.qemu_id)).exists(){
             fs::remove_file(format!("{}/payload_{}", params.workdir, params.qemu_id)).unwrap();
         }
 
         symlink(
-            &params.payload_filename,
+            &shm_work_dir_path,
             format!("{}/payload_{}", params.workdir, params.qemu_id),
         )
         .unwrap();
-        //println!("======================================SET NOT_INIT!!!!");
+
         payload_shm_f.write_all(b"not_init").unwrap();
         bitmap_shm_f.set_len(params.bitmap_size as u64).unwrap();
-        payload_shm_f.set_len(params.payload_size as u64 + 0x1000).unwrap();
+        ijon_buffer_shm_f.set_len(0x1000).unwrap();
 
-        let bitmap_shared = make_shared_data(bitmap_shm_f, params.bitmap_size);
-        let payload_shared = make_shared_data(payload_shm_f, params.payload_size);
+        let mut bitmap_shared = make_shared_data(&bitmap_shm_f, params.bitmap_size);
+        let mut payload_shared = make_shared_data(&payload_shm_f, params.payload_size);
 
-        
-        let bitmap_shm_f = OpenOptions::new()
-            .create(true)
-            .read(true)
-            .write(true)
-            .open(&params.bitmap_filename)
-            .expect("couldn't open bitmap file");
-        
-        let ijon_shared = make_shared_ijon_data(bitmap_shm_f, params.bitmap_size);
+        let ijon_shared = make_shared_data(&ijon_buffer_shm_f, 0x1000);
+        let ijon_feedback_buffer = make_shared_ijon_data(ijon_buffer_shm_f, 0x1000);
 
         
         thread::sleep(time::Duration::from_secs(1));
@@ -154,23 +193,16 @@ impl QemuProcess {
 
         thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
 
-        //println!("CONNECT TO {}", params.control_filename);
-
-        //control.settimeout(None) maybe needed?
-        //control.setblocking(1)
 
         let mut control = loop {
             match UnixStream::connect(&params.control_filename) {
                 Ok(stream) => break stream,
                 _ => {
-                    //println!("TRY..."); /* broken af */
                     thread::sleep(time::Duration::from_millis(1))
                 },
             }
         };
 
-        // dry_run
-        //println!("TRHEAD {} run QEMU initial",params.qemu_id);
         if run_qemu(&mut control).is_err() {
             return Err(format!("cannot launch QEMU-Nyx..."));
         }
@@ -206,21 +238,27 @@ impl QemuProcess {
         }
 
         loop {
-            if aux_buffer.result.abort == 1 {
-                let len = aux_buffer.misc.len;
-                let msg = format!("agent abort() -> \n\t{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).red());
 
-                /* get rid of this process */
-                child.kill().unwrap();
-                child.wait().unwrap();
+            match aux_buffer.result.exec_result_code {
+                NYX_HPRINTF     => {
+                    let len = aux_buffer.misc.len;
+                    print!("{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).yellow());
+                },
+                NYX_ABORT => {
+                    let len = aux_buffer.misc.len;
+                    let msg = format!("agent abort() -> \n\t{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).red());
 
-                return Err(msg);
+                    /* get rid of this process */
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+
+                    return Err(msg);
+                }
+                NYX_SUCCESS => {},
+                x => {
+                    panic!(" -> unkown type ? {}", x);
+                }
             }
-
-            if aux_buffer.result.hprintf == 1 {
-                let len = aux_buffer.misc.len;
-                print!("{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).yellow());
-            } 
 
             if aux_buffer.result.state == 3 {
                 break;
@@ -228,8 +266,33 @@ impl QemuProcess {
             if run_qemu(&mut control).is_err(){
                 return Err(format!("failed to establish fuzzing loop..."));
             } 
-            //run_qemu(&mut control).unwrap();
         }
+
+        let mut bitmap_size = params.bitmap_size as usize;
+        //println!("[!] libnyx: {:x}", aux_buffer.cap.agent_coverage_bitmap_size);
+        if aux_buffer.cap.agent_coverage_bitmap_size != 0 {
+            //let file_len = bitmap_shm_f.metadata().unwrap().len();
+            bitmap_size = aux_buffer.cap.agent_coverage_bitmap_size as usize;
+            if aux_buffer.cap.agent_coverage_bitmap_size as usize > bitmap_shared.len(){
+                //println!("[!] libnyx: agent requests a differnt coverage bitmap size: {:x} (current: {:x})", aux_buffer.cap.agent_coverage_bitmap_size as u32, file_len);
+                bitmap_shared = make_shared_data(&bitmap_shm_f, aux_buffer.cap.agent_coverage_bitmap_size as usize);
+            }
+        }
+
+        let mut input_buffer_size = params.payload_size as usize;
+        if aux_buffer.cap.agent_input_buffer_size != 0 {
+            input_buffer_size = aux_buffer.cap.agent_input_buffer_size as usize;
+            if aux_buffer.cap.agent_input_buffer_size as usize > payload_shared.len(){
+                payload_shared = make_shared_data(&payload_shm_f, aux_buffer.cap.agent_input_buffer_size as usize);
+            }
+        }
+
+        match aux_buffer.cap.agent_trace_bitmap {
+            0 => println!("[!] libnyx: coverage mode: Intel-PT (KVM-Nyx and libxdc)"),
+            1 => println!("[!] libnyx: coverage mode: compile-time instrumentation"),
+            _ => panic!("unkown aux_buffer.cap.agent_trace_bitmap value"),
+        };
+        
         println!("[!] libnyx: qemu #{} is ready:", params.qemu_id);
 
         aux_buffer.config.reload_mode = 1;
@@ -240,11 +303,16 @@ impl QemuProcess {
         return Ok(QemuProcess {
             process: child,
             aux: aux_buffer,
-            feedback_data: ijon_shared,
+            feedback_data: ijon_feedback_buffer,
+            ijon_buffer: ijon_shared,
             ctrl: control,
             bitmap: bitmap_shared,
+            bitmap_size: bitmap_size,
+            input_buffer_size: input_buffer_size,
             payload: payload_shared,
             params,
+            shm_work_dir,
+            shm_file_lock: file_lock,
         });
     }
 
@@ -260,33 +328,48 @@ impl QemuProcess {
             }
             mem_barrier();
 
-            if self.aux.result.hprintf == 1 {
-                let len = self.aux.misc.len;
-                print!("{}", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).yellow());
-                continue;
-            }
-
-            if self.aux.result.abort == 1 {
-                let len = self.aux.misc.len;
-                println!("[!] libnyx: agent abort() -> \"{}\"", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).red());
-                break;
-            }
-
-            if self.aux.result.success != 0 || self.aux.result.crash_found != 0 || self.aux.result.asan_found != 0 || self.aux.result.payload_write_attempt_found != 0 {
-                break;
-            }
-
             if self.aux.result.page_not_found != 0 {
                 let v = self.aux.result.page_not_found_addr;
-                println!("PAGE NOT FOUND -> {:x}\n", v);
-                if old_address == self.aux.result.page_not_found_addr {
-                    break;
+                if old_address != self.aux.result.page_not_found_addr {
+                    //println!("libnyx: page is missing -> {:x}\n", v);
+                    old_address = self.aux.result.page_not_found_addr;
+                    self.aux.config.page_addr = self.aux.result.page_not_found_addr;
+                    self.aux.config.page_dump_mode = 1;
+                    self.aux.config.changed = 1;
+
+                    mem_barrier();
+                    match run_qemu(&mut self.ctrl) {
+                        Err(x) => return Err(x),
+                        Ok(_) => {},
+                    }
+                    mem_barrier();
+
+                    continue;
                 }
-                old_address = self.aux.result.page_not_found_addr;
-                self.aux.config.page_addr = self.aux.result.page_not_found_addr;
-                self.aux.config.page_dump_mode = 1;
-                self.aux.config.changed = 1;
-            } 
+                else{
+                    println!("libnyx: cannot dump missing page -> {:x}", v);
+                }
+            }
+            
+
+            match self.aux.result.exec_result_code {
+                NYX_HPRINTF     => {
+                    let len = self.aux.misc.len;
+                    print!("{}", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).yellow());
+                    continue;
+                },
+                NYX_ABORT       => {
+                    let len = self.aux.misc.len;
+                    println!("[!] libnyx: agent abort() -> \"{}\"", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).red());
+                    break;
+                },
+                NYX_SUCCESS | NYX_CRASH | NYX_INPUT_WRITE | NYX_TIMEOUT      => {
+                    break;
+                },
+                x => {
+                    panic!("[!] libnyx: ERROR -> unkown Nyx exec result code: {}", x);
+                }
+            }
         }
         Ok(())
     }
@@ -301,10 +384,28 @@ impl QemuProcess {
         self.process.wait().unwrap();
     }
 
+    fn remove_shm_work_dir(&mut self){
+
+        /* move originals into workdir (in case we need the data to debug stuff) */
+        let shm_path = self.shm_work_dir.to_str().unwrap();
+        fs::remove_file(&format!("{}/bitmap_{}", &self.params.workdir, self.params.qemu_id)).unwrap();
+        fs::copy(&format!("{}/bitmap", shm_path), &format!("{}/bitmap_{}", &self.params.workdir, self.params.qemu_id)).unwrap();
+
+        fs::remove_file(&format!("{}/payload_{}", &self.params.workdir, self.params.qemu_id)).unwrap();
+        fs::copy(&format!("{}/input", shm_path), &format!("{}/payload_{}", &self.params.workdir, self.params.qemu_id)).unwrap();
+
+        fs::remove_file(&format!("{}/ijon_{}", &self.params.workdir, self.params.qemu_id)).unwrap();
+        fs::copy(&format!("{}/ijon", shm_path), &format!("{}/ijon_{}", &self.params.workdir, self.params.qemu_id)).unwrap();
+
+        /* remove this shm directory */
+        fs::remove_dir_all(&self.shm_work_dir).unwrap();
+    }
+
     pub fn shutdown(&mut self) {
         println!("[!] libnyx: sending SIGKILL to QEMU-Nyx process...");
         self.process.kill().unwrap();
         self.wait();
+        self.remove_shm_work_dir();
     }
 
     pub fn wait_for_workdir(workdir: &str){
@@ -314,6 +415,7 @@ impl QemuProcess {
             "page_cache.lock",
             "page_cache.addr",
             "page_cache.addr",
+            "snapshot/fast_snapshot.qemu_state"
         ];
         for file in files.iter() {
             while !Path::new(&format!("{}/{}", workdir, file)).exists(){
@@ -326,11 +428,9 @@ impl QemuProcess {
         Self::clear_workdir(workdir);
         let folders = vec![
             "/corpus/normal",
-            "/metadata",
             "/corpus/crash",
             "/corpus/kasan",
             "/corpus/timeout",
-            "/bitmaps",
             "/imports",
             "/seeds",
             "/snapshot",
@@ -379,26 +479,59 @@ impl QemuProcess {
     }
 
     fn prepare_redqueen_workdir(workdir: &str, qemu_id: usize) {
-        //println!("== preparing RQ folder: {}", qemu_id);
         fs::create_dir_all(format!("{}/redqueen_workdir_{}", workdir, qemu_id))
-            .expect("couldn't initialize workdir");
-        //println!("== preparing RQ folder: {} DONE", qemu_id);
-   
+            .expect("couldn't initialize workdir");   
+    }
+
+    fn remove_unused_shm_work_dirs(){
+        /* find and remove orphaned Nyx shm workdirs in /dev/shm */
+        for p in glob::glob(&format!("/dev/shm/nyx_*")).expect("couldn't glob??"){
+            let mut path = p.unwrap();
+            
+            path.push("lock");
+            if path.exists(){
+
+                let file_lock = OpenOptions::new()
+                    .read(true)
+                    .open(&path)
+                    .expect("couldn't open shm work dir lock file");
+
+                path.pop();
+                match file_lock.try_lock_exclusive(){
+                    Ok(_) => {
+                        if path.starts_with("/dev/shm/") {
+                            fs::remove_dir_all(path).unwrap();
+                        }
+                    },
+                    Err(_) => {},
+                }
+            }
         }
+    }
 
     fn clear_workdir(workdir: &str) {
         let _ = fs::remove_dir_all(workdir);
+        Self::remove_unused_shm_work_dirs()
+    }
 
-        let project_name = Path::new(workdir)
-            .file_name()
-            .expect("Couldn't get project name from workdir!")
-            .to_str()
-            .expect("invalid chars in workdir path")
-            .to_string();
+    fn create_shm_work_dir() -> (PathBuf, File) {
+        let shm_work_dir_path_str = format!("/dev/shm/nyx_{}_{}/", process::id(), gettid());
+        let shm_work_dir_path = PathBuf::from(&shm_work_dir_path_str);
 
-        for p in glob::glob(&format!("/dev/shm/kafl_{}_*", project_name)).expect("couldn't glob??")
-        {
-            fs::remove_file(p.expect("invalid path found")).unwrap();
-        }
+        fs::create_dir_all(&shm_work_dir_path).expect("couldn't initialize shm work directory");
+
+        let file_lock_path_str = format!("/dev/shm/nyx_{}_{}/lock", process::id(), gettid());
+        let file_lock_path = Path::new(&file_lock_path_str);
+
+        let file_lock = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(file_lock_path)
+            .expect("couldn't open shm work dir lock file");
+
+        file_lock.lock_exclusive().unwrap();
+
+        (shm_work_dir_path, file_lock)
     }
 }

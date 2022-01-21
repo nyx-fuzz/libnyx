@@ -12,13 +12,20 @@ use crate::nyx::mem_barrier::mem_barrier;
 
 use derivative::Derivative;
 
+/* various Nyx exec codes (aux_buffer.result.exec_result_code) */
+pub const NYX_SUCCESS: u8       = 0;
+pub const NYX_CRASH: u8         = 1;
+pub const NYX_HPRINTF: u8       = 2;
+pub const NYX_TIMEOUT: u8       = 3;
+pub const NYX_INPUT_WRITE: u8   = 4;
+pub const NYX_ABORT: u8         = 5;
 
 
 const AUX_BUFFER_SIZE: usize = 4096;
 
 const AUX_MAGIC: u64 = 0x54502d554d4551_u64;
-const QEMU_PT_VERSION: u16 = 2; /* let's start at 1 for the initial version using the aux buffer */
-const QEMU_PT_HASH: u16 = 82;
+const QEMU_PT_VERSION: u16 = 3; /* let's start at 1 for the initial version using the aux buffer */
+const QEMU_PT_HASH: u16 = 84;
 
 const HEADER_SIZE: usize = 128;
 const CAP_SIZE: usize = 256;
@@ -114,6 +121,10 @@ pub struct auxilary_buffer_cap_s {
     pub agent_timeout_detection: u8,    /* agent implements own timeout detection; host timeout detection is still in used, but treshold is increased by x2; */
     pub agent_trace_bitmap: u8,         /* agent implements own tracing mechanism; PT tracing is disabled */
     pub agent_ijon_trace_bitmap: u8,    /* agent uses the ijon shm buffer */
+
+    pub agent_input_buffer_size: u32,    /* agent requests a custom input buffer size (if the size is 0, the minimum buffer size is used) */
+    pub agent_coverage_bitmap_size: u32,    /* agent requests a custom coverage bitmap size (if the size is 0, the minimum buffer size is used) */
+
 }
 #[derive(Debug, Copy, Clone)]
 #[repr(C, packed(1))]
@@ -151,40 +162,23 @@ pub struct auxilary_buffer_result_s {
         3 -> ready to fuzz
     */
     pub state: u8,
-    /* snapshot extension */
+    pub exec_done: u8,
+    pub exec_result_code: u8,
+    pub reloaded: u8,
+
+    pub pt_overflow: u8,
+    pub page_not_found: u8,
     pub tmp_snapshot_created: u8,
-
-    #[derivative(Debug="ignore")]
-    pub padding_1: u8,
-    #[derivative(Debug="ignore")]
-    pub padding_2: u8,
-
-    pub bb_coverage: u32,
-
     #[derivative(Debug="ignore")]
     pub padding_3: u8,
-    #[derivative(Debug="ignore")]
-    pub padding_4: u8,
 
-    pub hprintf: u8,
-    pub exec_done: u8,
-    pub crash_found: u8,
-    pub asan_found: u8,
-    pub timeout_found: u8,
-    pub reloaded: u8,
-    pub pt_overflow: u8,
-
-    
-    pub runtime_sec: u8,
-
-    pub page_not_found: u8,
-    pub success: u8,
-    pub runtime_usec: u32,
     pub page_not_found_addr: u64,
     pub dirty_pages: u32,
-    pub pt_trace_size: u32, 
-    pub payload_write_attempt_found: u8,
-    pub abort: u8,
+    pub pt_trace_size: u32,
+    pub bb_coverage: u32,
+    pub runtime_usec: u32,
+    pub runtime_sec: u32,
+
 }
 
 #[repr(C, packed(1))]

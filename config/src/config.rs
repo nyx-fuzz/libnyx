@@ -18,13 +18,13 @@ fn into_absolute_path(path_to_sharedir: &str, path_to_file: String) -> String {
     }
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
 pub struct IptFilter {
     pub a: u64,
     pub b: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QemuKernelConfig {
     pub qemu_binary: String,
     pub kernel: String,
@@ -51,14 +51,14 @@ impl QemuKernelConfig{
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum SnapshotPath {
     Reuse(String),
     Create(String),
     DefaultPath,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QemuSnapshotConfig {
     pub qemu_binary: String,
     pub hda: String,
@@ -87,7 +87,7 @@ impl QemuSnapshotConfig{
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum FuzzRunnerConfig {
     QemuKernel(QemuKernelConfig),
     QemuSnapshot(QemuSnapshotConfig),
@@ -105,7 +105,7 @@ impl FuzzRunnerConfig{
     }
 }
 
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum SnapshotPlacement {
     None,
@@ -120,14 +120,14 @@ impl std::str::FromStr for SnapshotPlacement {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FuzzerConfig {
     pub spec_path: String,
     pub workdir_path: String,
     pub bitmap_size: usize,
+    pub input_buffer_size: usize,
     pub mem_limit: usize,
     pub time_limit: Duration,
-    pub target_binary: Option<String>,
     pub threads: usize,
     pub thread_id: usize,
     pub cpu_pin_start_at: usize,
@@ -155,9 +155,9 @@ impl FuzzerConfig{
             spec_path: format!("{}/spec.msgp",sharedir),
             workdir_path: config.workdir_path.or(default.workdir_path).expect("no workdir_path specified"),
             bitmap_size: config.bitmap_size.or(default.bitmap_size).expect("no bitmap_size specified"),
+            input_buffer_size: config.input_buffer_size,
             mem_limit: config.mem_limit.or(default.mem_limit).expect("no mem_limit specified"),
             time_limit: config.time_limit.or(default.time_limit).expect("no time_limit specified"),
-            target_binary: config.target_binary.or(default.target_binary),
             threads: config.threads.or(default.threads).expect("no threads specified"),
             thread_id: config.thread_id.or(default.thread_id).expect("no thread_id specified"),
             cpu_pin_start_at: config.cpu_pin_start_at.or(default.cpu_pin_start_at).expect("no cpu_pin_start_at specified"),
@@ -178,7 +178,7 @@ impl FuzzerConfig{
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub runner: FuzzRunnerConfig,
     pub fuzz: FuzzerConfig,

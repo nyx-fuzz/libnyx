@@ -5,235 +5,269 @@ use config::{Config, FuzzRunnerConfig};
 use fuzz_runner::nyx::qemu_process_new_from_kernel;
 use fuzz_runner::nyx::qemu_process_new_from_snapshot;
 use fuzz_runner::nyx::qemu_process::QemuProcess;
+use fuzz_runner::nyx::aux_buffer::{NYX_SUCCESS, NYX_CRASH, NYX_TIMEOUT, NYX_INPUT_WRITE, NYX_ABORT};
 
-use libc::c_char;
-use std::ffi::CStr;
+use std::fmt;
+
+pub mod ffi;
 
 #[repr(C)]
+#[derive(Debug)]
 pub enum NyxReturnValue {
     Normal,
     Crash,
     Asan,
-    Timout,
+    Timeout,
     InvalidWriteToPayload,
     Error,
     IoError,    // QEMU process has died for some reason
     Abort,      // Abort hypercall called
 }
 
-#[no_mangle]
-pub extern "C" fn nyx_new(sharedir: *const c_char, workdir: *const c_char, worker_id: u32, cpu_id: u32, create_snapshot: bool) -> * mut QemuProcess {
-    let sharedir_c_str = unsafe {
-        assert!(!sharedir.is_null());
-        CStr::from_ptr(sharedir)
-    };
+pub struct NyxProcess {
+    process: QemuProcess,
+}
 
-    let workdir_c_str = unsafe {
-        assert!(!workdir.is_null());
-        CStr::from_ptr(workdir)
-    };
+#[derive(Clone, Debug)]
+pub struct NyxConfig {
+    config: Config,
+}
 
-
-    let sharedir_r_str = sharedir_c_str.to_str().unwrap();
-    let workdir_r_str = workdir_c_str.to_str().unwrap();
-
-    let cfg: Config = match Config::new_from_sharedir(&sharedir_r_str){
-        Ok(x) => x,
-        Err(msg) => {
-            println!("[!] libnyx config reader error: {}", msg);
-            return std::ptr::null_mut() as *mut QemuProcess;
+impl NyxConfig {
+    pub fn load(sharedir: &str) -> Result<NyxConfig, String> {
+        match Config::new_from_sharedir(&sharedir){
+            Ok(x) => Ok(NyxConfig{
+                config: x
+            }),
+            Err(x) => Err(x),
         }
-    };
+    }
 
-    let mut config = cfg.fuzz;
-    let runner_cfg = cfg.runner;
+    pub fn qemu_binary_path(&self) -> Option<String>{
+        let process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return None,
+        };
+        return Some(process_cfg.qemu_binary);
+    }
 
+    pub fn kernel_image_path(&self) -> Option<String>{
+        let process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return None,
+        };
+        return Some(process_cfg.kernel);
+    }
 
-    /* todo: add sanity check */
-    config.cpu_pin_start_at = cpu_id as usize;
+    pub fn ramfs_image_path(&self) -> Option<String>{
+        let process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return None,
+        };
+        return Some(process_cfg.ramfs);
+    }
 
-    config.thread_id = worker_id as usize;
-    config.threads = if create_snapshot { 2 as usize } else { 1 as usize };
+    pub fn timeout(&self) -> std::time::Duration {
+        self.config.fuzz.time_limit
+    }
 
+    pub fn spec_path(&self) -> String{
+        self.config.fuzz.spec_path.clone()
+    }
+
+    pub fn bitmap_size(&self) -> usize{
+        self.config.fuzz.bitmap_size
+    }
+
+    pub fn workdir_path(&self) -> &str {
+        &self.config.fuzz.workdir_path
+    }
+
+    pub fn dict(&self) -> Vec<Vec<u8>> {
+        self.config.fuzz.dict.clone()
+    }
+}
+
+impl fmt::Display for NyxConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({:#?})", self.config)
+    }
+}
+
+impl NyxProcess {
+
+    fn start_process(sharedir: &str, workdir: &str, fuzzer_config: Config,  worker_id: u32) -> Result<QemuProcess, String> {
+
+        let mut config = fuzzer_config.fuzz;
+        let runner_cfg = fuzzer_config.runner;
     
-    config.workdir_path = format!("{}", workdir_r_str);
-
-    let sdir = sharedir_r_str.clone();
-
-    if worker_id == 0 {
-        QemuProcess::prepare_workdir(&config.workdir_path, config.seed_path.clone());
-    }
-    else{
-        QemuProcess::wait_for_workdir(&config.workdir_path);
-    }
-
-    let runner = match runner_cfg.clone() {
-        FuzzRunnerConfig::QemuSnapshot(cfg) => {
-            qemu_process_new_from_snapshot(sdir.to_string(), &cfg, &config)            
-        },
-        FuzzRunnerConfig::QemuKernel(cfg) => {
-            qemu_process_new_from_kernel(sdir.to_string(), &cfg, &config)
+        config.workdir_path = format!("{}", workdir);
+    
+        let sdir = sharedir.clone();
+    
+        if worker_id == 0 {
+            QemuProcess::prepare_workdir(&config.workdir_path, config.seed_path.clone());
         }
-    };
+        else{
+            QemuProcess::wait_for_workdir(&config.workdir_path);
+        }
     
-    match runner {
-        Ok(x) => Box::into_raw(Box::new(x)),
-        Err(msg) => {
-            println!("[!] libnyx failed to initialize QEMU-Nyx: {}", msg);
-            std::ptr::null_mut() as *mut QemuProcess
-        },
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_get_aux_buffer(qemu_process: * mut QemuProcess) -> *mut u8 {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        //return (*qemu_process).aux.get_raw_ptr();
-        //return &((*qemu_process).aux.header).as_mut_ptr();
-        return std::ptr::addr_of!((*qemu_process).aux.header.magic) as *mut u8;
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_get_payload_buffer(qemu_process: * mut QemuProcess) -> *mut u8 {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        return (*qemu_process).payload.as_mut_ptr();
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_get_bitmap_buffer(qemu_process: * mut QemuProcess) -> *mut u8 {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        return (*qemu_process).bitmap.as_mut_ptr();
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_get_bitmap_buffer_size(qemu_process: * mut QemuProcess) -> usize {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-        return (*qemu_process).bitmap.len();
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_shutdown(qemu_process: * mut QemuProcess) {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        (*qemu_process).shutdown();
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_option_set_reload_mode(qemu_process: * mut QemuProcess, enable: bool) {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        (*qemu_process).aux.config.reload_mode = if enable {1} else {0};
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_option_set_timeout(qemu_process: * mut QemuProcess, timeout_sec: u8, timeout_usec: u32) {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        (*qemu_process).aux.config.timeout_sec = timeout_sec;
-        (*qemu_process).aux.config.timeout_usec = timeout_usec;
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_option_apply(qemu_process: * mut QemuProcess) {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        (*qemu_process).aux.config.changed = 1;
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn nyx_exec(qemu_process: * mut QemuProcess) -> NyxReturnValue {
-    
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        match (*qemu_process).send_payload(){
-            Err(_) => return  NyxReturnValue::IoError,
-            Ok(_) => {
-                if (*qemu_process).aux.result.abort != 0 {
-                    return  NyxReturnValue::Abort;
-                }
-                if (*qemu_process).aux.result.crash_found != 0 {
-                    return NyxReturnValue::Crash;
-                }
-                if (*qemu_process).aux.result.asan_found != 0 {
-                    return NyxReturnValue::Asan;
-                }
-                if (*qemu_process).aux.result.timeout_found != 0 {
-                    return NyxReturnValue::Timout;
-                }
-                if (*qemu_process).aux.result.payload_write_attempt_found != 0 {
-                    return NyxReturnValue::InvalidWriteToPayload;
-                }
-                if (*qemu_process).aux.result.success != 0 {
-                    return NyxReturnValue::Normal;
-                }
-                return NyxReturnValue::Error;
+        match runner_cfg.clone() {
+            FuzzRunnerConfig::QemuSnapshot(cfg) => {
+                qemu_process_new_from_snapshot(sdir.to_string(), &cfg, &config)            
+            },
+            FuzzRunnerConfig::QemuKernel(cfg) => {
+                qemu_process_new_from_kernel(sdir.to_string(), &cfg, &config)
             }
         }
     }
-}
 
-#[no_mangle]
-pub extern "C" fn nyx_set_afl_input(qemu_process: * mut QemuProcess, buffer: *mut u8, size: u32) {
+    fn process_start(sharedir: &str, workdir: &str, worker_id: u32, cpu_id: u32, create_snapshot: bool, input_buffer_size: Option<u32>, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
+        let mut cfg: Config = match Config::new_from_sharedir(&sharedir){
+            Ok(x) => x,
+            Err(msg) => {
+                return Err(format!("[!] libnyx config reader error: {}", msg));
+            }
+        };
+    
+        cfg.fuzz.write_protected_input_buffer = input_buffer_write_protection;
+    
+        /* todo: add sanity check */
+        cfg.fuzz.cpu_pin_start_at = cpu_id as usize;
+    
+        match input_buffer_size{
+            Some(x) => { cfg.fuzz.input_buffer_size = x as usize; },
+            None => {},
+        }
+    
+        cfg.fuzz.thread_id = worker_id as usize;
+        cfg.fuzz.threads = if create_snapshot { 2 as usize } else { 1 as usize };
+            
+        cfg.fuzz.workdir_path = format!("{}", workdir);
 
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-        assert!((buffer as usize) % std::mem::align_of::<u8>() == 0);
-
-        std::ptr::copy(&size, (*qemu_process).payload.as_mut_ptr() as *mut u32, 1 as usize);
-        std::ptr::copy(buffer, (*qemu_process).payload[std::mem::size_of::<u32>()..].as_mut_ptr(), std::cmp::min(size as usize, 0x10000));
-    }
-}
-
-
-#[no_mangle]
-pub extern "C" fn nyx_print_aux_buffer(qemu_process: * mut QemuProcess) {
-    unsafe{
-        assert!(!qemu_process.is_null());
-        assert!((qemu_process as usize) % std::mem::align_of::<QemuProcess>() == 0);
-
-        print!("{}", format!("{:#?}", (*qemu_process).aux.result));
-        if (*qemu_process).aux.result.crash_found != 0 || (*qemu_process).aux.result.asan_found != 0 || (*qemu_process).aux.result.hprintf != 0 { 
-            println!("{}", std::str::from_utf8(&(*qemu_process).aux.misc.data).unwrap());
+        match Self::start_process(sharedir, workdir, cfg,  worker_id){
+            Ok(x) => Ok(NyxProcess{
+                process: x,
+            }),
+            Err(x) => Err(x),
         }
     }
-}
 
+    pub fn from_config(sharedir: &str, config: &NyxConfig, worker_id: u32, create_snapshot: bool) -> Result<NyxProcess, String>{
+        let workdir = config.config.fuzz.workdir_path.clone();
 
+        let mut config= config.clone();
+        config.config.fuzz.threads = if create_snapshot { 2 as usize } else { 1 as usize };
+        config.config.fuzz.thread_id = worker_id as usize;
 
+        match Self::start_process(sharedir, &workdir, config.config.clone(), worker_id) {
+            Ok(x) => Ok(NyxProcess{
+                process: x,
+            }),
+            Err(x) => Err(x),
+        }
+    }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
+    pub fn new(sharedir: &str, workdir: &str, cpu_id: u32, input_buffer_size: u32, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
+        Self::process_start(sharedir, workdir, 0, cpu_id, false, Some(input_buffer_size), input_buffer_write_protection)
+    }
+    
+    pub fn new_parent(sharedir: &str, workdir: &str, cpu_id: u32, input_buffer_size: u32, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
+        Self::process_start(sharedir, workdir, 0, cpu_id, true, Some(input_buffer_size), input_buffer_write_protection)
+    }
+    
+    pub fn new_child(sharedir: &str, workdir: &str, cpu_id: u32, worker_id: u32) -> Result<NyxProcess, String> {
+        if worker_id == 0 {
+            println!("[!] libnyx failed -> worker_id=0 cannot be used for child processes");
+            Err("worker_id=0 cannot be used for child processes".to_string())
+        }
+        else{
+            Self::process_start(sharedir, workdir, worker_id, cpu_id, true, None, false)
+        }
+    }
+
+    pub fn aux_buffer_as_mut_ptr(&self) -> *mut u8 {
+        std::ptr::addr_of!(self.process.aux.header.magic) as *mut u8
+    }
+    
+    pub fn input_buffer(&self) -> &[u8] {
+        self.process.payload
+    }
+    
+    pub fn input_buffer_mut(&mut self) -> &mut [u8] {
+        self.process.payload
+    }
+
+    pub fn input_buffer_size(&mut self) -> usize {
+        self.process.payload.len()
+    }
+    
+    pub fn bitmap_buffer(&self) -> &[u8] {
+        self.process.bitmap
+    }
+    
+    pub fn bitmap_buffer_mut(&mut self) -> &mut [u8] {
+        self.process.bitmap
+    }
+
+    pub fn bitmap_buffer_size(&self) -> usize {
+        self.process.bitmap_size
+    }
+
+    pub fn ijon_buffer(&self) -> &[u8] {
+        self.process.ijon_buffer
+    }
+    
+    pub fn shutdown(&mut self) {
+        self.process.shutdown();
+    }
+    
+    pub fn option_set_reload_mode(&mut self, enable: bool) {
+        self.process.aux.config.reload_mode = if enable {1} else {0};
+    }
+
+    pub fn option_set_redqueen_mode(&mut self, enable: bool) {
+        self.process.aux.config.redqueen_mode = if enable {1} else {0};
+    }
+
+    pub fn option_set_trace_mode(&mut self, enable: bool) {
+        self.process.aux.config.trace_mode = if enable {1} else {0};
+    }
+
+    pub fn option_set_delete_incremental_snapshot(&mut self, enable: bool) {
+        self.process.aux.config.discard_tmp_snapshot = if enable {1} else {0};
+    }
+
+    pub fn option_set_timeout(&mut self, timeout_sec: u8, timeout_usec: u32) {
+        self.process.aux.config.timeout_sec = timeout_sec;
+        self.process.aux.config.timeout_usec = timeout_usec;
+    }
+    
+    pub fn option_apply(&mut self) {
+        self.process.aux.config.changed = 1;
+    }
+
+    pub fn aux_misc(&self) -> Vec<u8>{
+        self.process.aux.misc.as_slice().to_vec()
+    }
+
+    pub fn aux_tmp_snapshot_created(&self) -> bool {
+        self.process.aux.result.tmp_snapshot_created != 0
+    }
+    
+    pub fn exec(&mut self) -> NyxReturnValue {
+        match self.process.send_payload(){
+            Err(_) =>  NyxReturnValue::IoError,
+            Ok(_) => {
+                match self.process.aux.result.exec_result_code {
+                    NYX_SUCCESS     => NyxReturnValue::Normal,
+                    NYX_CRASH       => NyxReturnValue::Crash,
+                    NYX_TIMEOUT     => NyxReturnValue::Timeout,
+                    NYX_INPUT_WRITE => NyxReturnValue::InvalidWriteToPayload,
+                    NYX_ABORT       => NyxReturnValue::Abort,
+                    _                  => NyxReturnValue::Error,
+                }
+            }
+        }
     }
 }

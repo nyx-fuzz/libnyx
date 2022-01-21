@@ -53,6 +53,9 @@ pub struct FuzzerConfigLoader {
 
     pub workdir_path: Option<String>,
     pub bitmap_size: Option<usize>,
+
+    #[serde(default = "default_input_buffer_size")]
+    pub input_buffer_size: usize,
     pub mem_limit: Option<usize>,
     pub time_limit: Option<Duration>,
     pub target_binary: Option<String>,
@@ -64,6 +67,10 @@ pub struct FuzzerConfigLoader {
     pub snapshot_placement: Option<SnapshotPlacement>,
     pub dump_python_code_for_inputs: Option<bool>,
     pub exit_after_first_crash: Option<bool>,
+}
+
+fn default_input_buffer_size() -> usize {
+    1 << 17
 }
 
 fn default_write_protected_input_buffer() -> bool {

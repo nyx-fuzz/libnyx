@@ -137,7 +137,7 @@ fn main() {
         .expect("couldn't open aux buffer file");
     let aux_buffer = aux_buffer::AuxBuffer::new_readonly(aux_shm_f, true);
 
-    aux_buffer.validate_header();
+    aux_buffer.validate_header().unwrap();
 
     if matches.is_present("show_all"){
         print_aux_buffer(&aux_buffer, &aux_buffer_file.to_string(), true, true, true, true, true, colered_output);
