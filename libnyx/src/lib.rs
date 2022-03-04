@@ -254,7 +254,12 @@ impl NyxProcess {
     pub fn aux_tmp_snapshot_created(&self) -> bool {
         self.process.aux.result.tmp_snapshot_created != 0
     }
-    
+
+    pub fn aux_string(&self) -> String {
+        let len = self.process.aux.misc.len;
+        String::from_utf8_lossy(&self.process.aux.misc.data[0..len as usize]).to_string()
+    }
+     
     pub fn exec(&mut self) -> NyxReturnValue {
         match self.process.send_payload(){
             Err(_) =>  NyxReturnValue::IoError,

@@ -203,3 +203,17 @@ pub extern "C" fn nyx_print_aux_buffer(nyx_process: * mut NyxProcess) {
         }
     }
 }
+
+#[no_mangle]
+pub extern "C" fn nyx_get_aux_string(nyx_process: * mut NyxProcess, buffer: *mut u8, size: u32) -> u32 {
+
+    unsafe{
+        assert!(!nyx_process.is_null());
+        assert!((nyx_process as usize) % std::mem::align_of::<NyxProcess>() == 0);
+        assert!((buffer as usize) % std::mem::align_of::<u8>() == 0);
+
+        let len = std::cmp::min( (*nyx_process).process.aux.misc.len as usize, size as usize);
+        std::ptr::copy((*nyx_process).process.aux.misc.data.as_mut_ptr(), buffer, len);
+        len as u32
+    }
+}
