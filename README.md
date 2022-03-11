@@ -12,7 +12,7 @@ If you found and fixed a bug on your own: We are very open to patches, please cr
 
 ### License
 
-This library is provided under **AGPL license**. 
+This library is provided under **GPLv2 license**. 
 
 **Free Software Hell Yeah!** 
 
