@@ -172,7 +172,7 @@ impl QemuProcess {
         thread::sleep(time::Duration::from_secs(1));
 
         thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
-
+        
 
         let mut child = if params.dump_python_code_for_inputs{
             Command::new(&params.cmd[0])
@@ -192,7 +192,7 @@ impl QemuProcess {
         thread::sleep(time::Duration::from_secs(1));
 
         thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
-
+        
 
         let mut control = loop {
             match UnixStream::connect(&params.control_filename) {
@@ -203,7 +203,7 @@ impl QemuProcess {
             }
         };
 
-        if run_qemu(&mut control).is_err() {
+        if wait_qemu(&mut control).is_err() {
             return Err(format!("cannot launch QEMU-Nyx..."));
         }
 
