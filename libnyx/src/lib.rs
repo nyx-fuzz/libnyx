@@ -83,6 +83,10 @@ impl NyxConfig {
         &self.config.fuzz.workdir_path
     }
 
+    pub fn set_workdir_path(&mut self, path: String) {
+        self.config.fuzz.workdir_path = path;
+    }
+
     pub fn dict(&self) -> Vec<Vec<u8>> {
         self.config.fuzz.dict.clone()
     }
