@@ -224,11 +224,11 @@ impl NyxProcess {
     }
     
     pub fn bitmap_buffer(&self) -> &[u8] {
-        self.process.bitmap
+        &self.process.bitmap[.. self.process.bitmap_size]
     }
     
     pub fn bitmap_buffer_mut(&mut self) -> &mut [u8] {
-        self.process.bitmap
+        &mut self.process.bitmap[.. self.process.bitmap_size]
     }
 
     pub fn bitmap_buffer_size(&self) -> usize {
