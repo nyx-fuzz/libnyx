@@ -24,6 +24,23 @@ pub enum NyxReturnValue {
     Abort,      // Abort hypercall called
 }
 
+impl fmt::Display for NyxReturnValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+        let nyx_return_value_str = match self {
+            NyxReturnValue::Normal                => "Normal",
+            NyxReturnValue::Crash                 => "Crash",
+            NyxReturnValue::Timeout               => "Timeout",
+            NyxReturnValue::InvalidWriteToPayload => "InvalidWriteToPayload",
+            NyxReturnValue::Abort                 => "Abort",
+            NyxReturnValue::Error                 => "Error",
+            _                                     => "Unknown",
+        };
+
+        write!(f, "{}", nyx_return_value_str)
+    }
+}
+
 pub struct NyxProcess {
     process: QemuProcess,
 }
@@ -274,5 +291,16 @@ impl NyxProcess {
                 }
             }
         }
+    }
+
+    pub fn set_input_ptr(&mut self, buffer: *const u8, size: u32) {
+        unsafe{
+            std::ptr::copy(&size, self.process.payload.as_mut_ptr() as *mut u32, 1 as usize);
+            std::ptr::copy(buffer, self.process.payload[std::mem::size_of::<u32>()..].as_mut_ptr(), std::cmp::min(size as usize, self.input_buffer_size()));
+        }
+    }
+    
+    pub fn set_input(&mut self, buffer: &[u8], size: u32) {
+        self.set_input_ptr(buffer.as_ptr(), size);
     }
 }

@@ -181,9 +181,8 @@ pub extern "C" fn nyx_set_afl_input(nyx_process: * mut NyxProcess, buffer: *mut 
         assert!((nyx_process as usize) % std::mem::align_of::<NyxProcess>() == 0);
         assert!((buffer as usize) % std::mem::align_of::<u8>() == 0);
 
-        std::ptr::copy(&size, (*nyx_process).process.payload.as_mut_ptr() as *mut u32, 1 as usize);
-        std::ptr::copy(buffer, (*nyx_process).process.payload[std::mem::size_of::<u32>()..].as_mut_ptr(), std::cmp::min(size as usize, (*nyx_process).input_buffer_size()));
-    }
+        (*nyx_process).set_input_ptr(buffer, size);
+   }
 }
 
 
