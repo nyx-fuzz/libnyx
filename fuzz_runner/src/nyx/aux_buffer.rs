@@ -19,6 +19,8 @@ pub const NYX_HPRINTF: u8       = 2;
 pub const NYX_TIMEOUT: u8       = 3;
 pub const NYX_INPUT_WRITE: u8   = 4;
 pub const NYX_ABORT: u8         = 5;
+pub const NYX_SANITIZER: u8     = 6;
+pub const NYX_STARVED: u8       = 7;
 
 
 const AUX_BUFFER_SIZE: usize = 4096;
