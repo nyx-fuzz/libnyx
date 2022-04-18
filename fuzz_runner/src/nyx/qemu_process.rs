@@ -26,7 +26,10 @@ use colored::*;
 
 
 use crate::nyx::aux_buffer::AuxBuffer;
-use crate::nyx::aux_buffer::{NYX_SUCCESS, NYX_CRASH, NYX_HPRINTF, NYX_TIMEOUT, NYX_ABORT, NYX_INPUT_WRITE};
+use crate::nyx::aux_buffer::{
+    NYX_SUCCESS, NYX_CRASH, NYX_HPRINTF, NYX_TIMEOUT, NYX_ABORT, NYX_INPUT_WRITE,
+    NYX_SANITIZER, NYX_STARVED
+};
 
 use crate::nyx::ijon_data::{SharedFeedbackData, FeedbackBuffer};
 use crate::nyx::mem_barrier::mem_barrier;
@@ -254,7 +257,7 @@ impl QemuProcess {
 
                     return Err(msg);
                 }
-                NYX_SUCCESS => {},
+                NYX_SUCCESS | NYX_STARVED => {},
                 x => {
                     panic!(" -> unkown type ? {}", x);
                 }
@@ -363,7 +366,7 @@ impl QemuProcess {
                     println!("[!] libnyx: agent abort() -> \"{}\"", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).red());
                     break;
                 },
-                NYX_SUCCESS | NYX_CRASH | NYX_INPUT_WRITE | NYX_TIMEOUT      => {
+                NYX_SUCCESS | NYX_CRASH | NYX_INPUT_WRITE | NYX_TIMEOUT | NYX_SANITIZER | NYX_STARVED => {
                     break;
                 },
                 x => {

@@ -5,7 +5,10 @@ use config::{Config, FuzzRunnerConfig};
 use fuzz_runner::nyx::qemu_process_new_from_kernel;
 use fuzz_runner::nyx::qemu_process_new_from_snapshot;
 use fuzz_runner::nyx::qemu_process::QemuProcess;
-use fuzz_runner::nyx::aux_buffer::{NYX_SUCCESS, NYX_CRASH, NYX_TIMEOUT, NYX_INPUT_WRITE, NYX_ABORT};
+use fuzz_runner::nyx::aux_buffer::{
+    NYX_SUCCESS, NYX_CRASH, NYX_TIMEOUT, NYX_INPUT_WRITE, NYX_ABORT,
+    NYX_SANITIZER, NYX_STARVED
+};
 
 use std::fmt;
 
@@ -307,8 +310,8 @@ impl NyxProcess {
             Err(_) =>  NyxReturnValue::IoError,
             Ok(_) => {
                 match self.process.aux.result.exec_result_code {
-                    NYX_SUCCESS     => NyxReturnValue::Normal,
-                    NYX_CRASH       => NyxReturnValue::Crash,
+                    NYX_SUCCESS | NYX_STARVED       => NyxReturnValue::Normal,
+                    NYX_CRASH | NYX_SANITIZER       => NyxReturnValue::Crash,
                     NYX_TIMEOUT     => NyxReturnValue::Timeout,
                     NYX_INPUT_WRITE => NyxReturnValue::InvalidWriteToPayload,
                     NYX_ABORT       => {
