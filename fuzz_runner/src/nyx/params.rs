@@ -8,6 +8,7 @@ pub struct KernelVmParams {
     pub ramfs: String,
     pub ram_size: usize,
     pub bitmap_size: usize,
+    pub qemu_args: String,
     pub debug: bool,
 
     pub dump_python_code_for_inputs: bool,
@@ -168,7 +169,7 @@ impl QemuParams {
         cmd.push(params.ramfs.to_string());
 
         cmd.push("-append".to_string());
-        cmd.push("nokaslr oops=panic nopti ignore_rlimit_data".to_string());
+        cmd.push(params.qemu_args.to_string());
 
         if !params.debug {
             cmd.push("-display".to_string());
