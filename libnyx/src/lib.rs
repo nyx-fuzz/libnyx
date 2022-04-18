@@ -21,7 +21,24 @@ pub enum NyxReturnValue {
     InvalidWriteToPayload,
     Error,
     IoError,    // QEMU process has died for some reason
-    Abort,      // Abort hypercall called
+    Abort(String),      // Abort hypercall called
+}
+
+impl fmt::Display for NyxReturnValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+
+        let nyx_return_value_str = match self {
+            NyxReturnValue::Normal                => "Normal".to_string(),
+            NyxReturnValue::Crash                 => "Crash".to_string(),
+            NyxReturnValue::Timeout               => "Timeout".to_string(),
+            NyxReturnValue::InvalidWriteToPayload => "InvalidWriteToPayload".to_string(),
+            NyxReturnValue::Abort(reason) => format!("Abort: {}", reason),
+            NyxReturnValue::Error                 => "Error".to_string(),
+            _                                     => "Unknown".to_string(),
+        };
+
+        write!(f, "{}", nyx_return_value_str)
+    }
 }
 
 pub struct NyxProcess {
@@ -67,6 +84,23 @@ impl NyxConfig {
         return Some(process_cfg.ramfs);
     }
 
+    pub fn qemu_kernel_args(&self) -> Option<String> {
+        let process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return None,
+        };
+        return Some(process_cfg.qemu_args);
+    }
+
+    pub fn set_qemu_kernel_args(&mut self, args: String) {
+        let mut process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return,
+        };
+        process_cfg.qemu_args = args;
+        self.config.runner = config::FuzzRunnerConfig::QemuKernel(process_cfg);
+    }
+
     pub fn timeout(&self) -> std::time::Duration {
         self.config.fuzz.time_limit
     }
@@ -83,8 +117,16 @@ impl NyxConfig {
         &self.config.fuzz.workdir_path
     }
 
+    pub fn set_workdir_path(&mut self, path: String) {
+        self.config.fuzz.workdir_path = path;
+    }
+
     pub fn dict(&self) -> Vec<Vec<u8>> {
         self.config.fuzz.dict.clone()
+    }
+
+    pub fn set_write_protected_input_buffer(&mut self, enable: bool){
+        self.config.fuzz.write_protected_input_buffer = enable;
     }
 }
 
@@ -203,11 +245,11 @@ impl NyxProcess {
     }
     
     pub fn bitmap_buffer(&self) -> &[u8] {
-        self.process.bitmap
+        &self.process.bitmap[.. self.process.bitmap_size]
     }
     
     pub fn bitmap_buffer_mut(&mut self) -> &mut [u8] {
-        self.process.bitmap
+        &mut self.process.bitmap[.. self.process.bitmap_size]
     }
 
     pub fn bitmap_buffer_size(&self) -> usize {
@@ -254,7 +296,12 @@ impl NyxProcess {
     pub fn aux_tmp_snapshot_created(&self) -> bool {
         self.process.aux.result.tmp_snapshot_created != 0
     }
-    
+
+    pub fn aux_string(&self) -> String {
+        let len = self.process.aux.misc.len;
+        String::from_utf8_lossy(&self.process.aux.misc.data[0..len as usize]).to_string()
+    }
+     
     pub fn exec(&mut self) -> NyxReturnValue {
         match self.process.send_payload(){
             Err(_) =>  NyxReturnValue::IoError,
@@ -264,10 +311,25 @@ impl NyxProcess {
                     NYX_CRASH       => NyxReturnValue::Crash,
                     NYX_TIMEOUT     => NyxReturnValue::Timeout,
                     NYX_INPUT_WRITE => NyxReturnValue::InvalidWriteToPayload,
-                    NYX_ABORT       => NyxReturnValue::Abort,
+                    NYX_ABORT       => {
+                        let len = self.process.aux.misc.len;
+                        let reason = String::from_utf8_lossy(&self.process.aux.misc.data[0..len as usize]).to_string();
+                        NyxReturnValue::Abort(reason)
+                    },
                     _                  => NyxReturnValue::Error,
                 }
             }
         }
+    }
+
+    pub fn set_input_ptr(&mut self, buffer: *const u8, size: u32) {
+        unsafe{
+            std::ptr::copy(&size, self.process.payload.as_mut_ptr() as *mut u32, 1 as usize);
+            std::ptr::copy(buffer, self.process.payload[std::mem::size_of::<u32>()..].as_mut_ptr(), std::cmp::min(size as usize, self.input_buffer_size()));
+        }
+    }
+    
+    pub fn set_input(&mut self, buffer: &[u8], size: u32) {
+        self.set_input_ptr(buffer.as_ptr(), size);
     }
 }

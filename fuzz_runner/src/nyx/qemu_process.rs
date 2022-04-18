@@ -172,7 +172,7 @@ impl QemuProcess {
         thread::sleep(time::Duration::from_secs(1));
 
         thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
-
+        
 
         let mut child = if params.dump_python_code_for_inputs{
             Command::new(&params.cmd[0])
@@ -192,7 +192,7 @@ impl QemuProcess {
         thread::sleep(time::Duration::from_secs(1));
 
         thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
-
+        
 
         let mut control = loop {
             match UnixStream::connect(&params.control_filename) {
@@ -203,7 +203,7 @@ impl QemuProcess {
             }
         };
 
-        if run_qemu(&mut control).is_err() {
+        if wait_qemu(&mut control).is_err() {
             return Err(format!("cannot launch QEMU-Nyx..."));
         }
 
@@ -491,19 +491,34 @@ impl QemuProcess {
             path.push("lock");
             if path.exists(){
 
-                let file_lock = OpenOptions::new()
+                let file_lock = match OpenOptions::new()
                     .read(true)
-                    .open(&path)
-                    .expect("couldn't open shm work dir lock file");
+                    .open(&path){
+                        Err(x) => {
+                            println!("Warning: {}", x);
+                            Err(x)
+                        },
+                        x => {
+                            x
+                        },
+                    };
 
-                path.pop();
-                match file_lock.try_lock_exclusive(){
-                    Ok(_) => {
-                        if path.starts_with("/dev/shm/") {
-                            fs::remove_dir_all(path).unwrap();
-                        }
-                    },
-                    Err(_) => {},
+                if file_lock.is_ok(){
+                    path.pop();
+
+                    match file_lock.unwrap().try_lock_exclusive(){
+                        Ok(_) => {
+                            if path.starts_with("/dev/shm/") {
+                                match fs::remove_dir_all(path){
+                                    Err(x) => {
+                                        println!("Warning: {}", x);
+                                    },
+                                    _ => {},
+                                }
+                            }
+                        },
+                        Err(_) => {},
+                    }
                 }
             }
         }
