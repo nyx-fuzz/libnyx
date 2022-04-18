@@ -29,6 +29,7 @@ pub struct QemuKernelConfig {
     pub qemu_binary: String,
     pub kernel: String,
     pub ramfs: String,
+    pub qemu_args: String,
     pub debug: bool,
 }
 
@@ -41,11 +42,13 @@ impl QemuKernelConfig{
         qemu_binary = into_absolute_path(default_config_folder, qemu_binary);
         kernel = into_absolute_path(default_config_folder, kernel);
         ramfs = into_absolute_path(default_config_folder, ramfs);
-
+    
+        let qemu_args = "nokaslr oops=panic nopti ignore_rlimit_data".to_string();
         Self{
             qemu_binary: qemu_binary,
             kernel: kernel,
             ramfs: ramfs,
+            qemu_args: qemu_args,
             debug: config.debug.or(default.debug).expect("no debug specified"),
         }
     }

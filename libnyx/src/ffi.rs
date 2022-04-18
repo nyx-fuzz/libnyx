@@ -5,6 +5,20 @@ use std::ffi::c_void;
 use fuzz_runner::nyx::aux_buffer::{NYX_CRASH, NYX_HPRINTF, NYX_ABORT};
 use super::*;
 
+/* FFI version */
+#[repr(C)]
+#[derive(Debug)]
+pub enum NyxReturn {
+    Normal,
+    Crash,
+    Asan,
+    Timeout,
+    InvalidWriteToPayload,
+    Error,
+    IoError,    // QEMU process has died for some reason
+    Abort,      // Abort hypercall called
+}
+
 #[no_mangle]
 pub extern "C" fn nyx_load_config(sharedir: *const c_char) -> *mut c_void {
     let sharedir_c_str = unsafe {
@@ -163,13 +177,25 @@ pub extern "C" fn nyx_option_apply(nyx_process: * mut NyxProcess) {
 }
 
 #[no_mangle]
-pub extern "C" fn nyx_exec(nyx_process: * mut NyxProcess) -> NyxReturnValue {
+pub extern "C" fn nyx_exec(nyx_process: * mut NyxProcess) -> NyxReturn {
     
     unsafe{
         assert!(!nyx_process.is_null());
         assert!((nyx_process as usize) % std::mem::align_of::<NyxProcess>() == 0);
 
-        (*nyx_process).exec()
+        match (*nyx_process).process.send_payload(){
+            Err(_) =>  NyxReturn::IoError,
+            Ok(_) => {
+                match (*nyx_process).process.aux.result.exec_result_code {
+                    NYX_SUCCESS     => NyxReturn::Normal,
+                    NYX_CRASH       => NyxReturn::Crash,
+                    NYX_TIMEOUT     => NyxReturn::Timeout,
+                    NYX_INPUT_WRITE => NyxReturn::InvalidWriteToPayload,
+                    NYX_ABORT       => NyxReturn::Abort,
+                    _                   => NyxReturn::Error,
+                }
+            }
+        }
     }
 }
 

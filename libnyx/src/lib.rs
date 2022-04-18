@@ -24,20 +24,20 @@ pub enum NyxReturnValue {
     InvalidWriteToPayload,
     Error,
     IoError,    // QEMU process has died for some reason
-    Abort,      // Abort hypercall called
+    Abort(String),      // Abort hypercall called
 }
 
 impl fmt::Display for NyxReturnValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 
         let nyx_return_value_str = match self {
-            NyxReturnValue::Normal                => "Normal",
-            NyxReturnValue::Crash                 => "Crash",
-            NyxReturnValue::Timeout               => "Timeout",
-            NyxReturnValue::InvalidWriteToPayload => "InvalidWriteToPayload",
-            NyxReturnValue::Abort                 => "Abort",
-            NyxReturnValue::Error                 => "Error",
-            _                                     => "Unknown",
+            NyxReturnValue::Normal                => "Normal".to_string(),
+            NyxReturnValue::Crash                 => "Crash".to_string(),
+            NyxReturnValue::Timeout               => "Timeout".to_string(),
+            NyxReturnValue::InvalidWriteToPayload => "InvalidWriteToPayload".to_string(),
+            NyxReturnValue::Abort(reason) => format!("Abort: {}", reason),
+            NyxReturnValue::Error                 => "Error".to_string(),
+            _                                     => "Unknown".to_string(),
         };
 
         write!(f, "{}", nyx_return_value_str)
@@ -87,6 +87,23 @@ impl NyxConfig {
         return Some(process_cfg.ramfs);
     }
 
+    pub fn qemu_kernel_args(&self) -> Option<String> {
+        let process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return None,
+        };
+        return Some(process_cfg.qemu_args);
+    }
+
+    pub fn set_qemu_kernel_args(&mut self, args: String) {
+        let mut process_cfg= match self.config.runner.clone() {
+            FuzzRunnerConfig::QemuKernel(cfg) => cfg,
+            _ => return,
+        };
+        process_cfg.qemu_args = args;
+        self.config.runner = config::FuzzRunnerConfig::QemuKernel(process_cfg);
+    }
+
     pub fn timeout(&self) -> std::time::Duration {
         self.config.fuzz.time_limit
     }
@@ -109,6 +126,10 @@ impl NyxConfig {
 
     pub fn dict(&self) -> Vec<Vec<u8>> {
         self.config.fuzz.dict.clone()
+    }
+
+    pub fn set_write_protected_input_buffer(&mut self, enable: bool){
+        self.config.fuzz.write_protected_input_buffer = enable;
     }
 }
 
@@ -291,10 +312,14 @@ impl NyxProcess {
                 match self.process.aux.result.exec_result_code {
                     NYX_SUCCESS | NYX_STARVED       => NyxReturnValue::Normal,
                     NYX_CRASH | NYX_SANITIZER       => NyxReturnValue::Crash,
-                    NYX_TIMEOUT                     => NyxReturnValue::Timeout,
-                    NYX_INPUT_WRITE                 => NyxReturnValue::InvalidWriteToPayload,
-                    NYX_ABORT                       => NyxReturnValue::Abort,
-                    _                               => NyxReturnValue::Error,
+                    NYX_TIMEOUT     => NyxReturnValue::Timeout,
+                    NYX_INPUT_WRITE => NyxReturnValue::InvalidWriteToPayload,
+                    NYX_ABORT       => {
+                        let len = self.process.aux.misc.len;
+                        let reason = String::from_utf8_lossy(&self.process.aux.misc.data[0..len as usize]).to_string();
+                        NyxReturnValue::Abort(reason)
+                    },
+                    _                  => NyxReturnValue::Error,
                 }
             }
         }
