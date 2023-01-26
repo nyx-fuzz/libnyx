@@ -9,4 +9,4 @@ edition = "2018"
 [dependencies]
 fuzz_runner={path="../fuzz_runner"}
 colored = "2.0.0"
-clap="2.33.0"
+clap="4"

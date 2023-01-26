@@ -53,14 +53,14 @@ impl QemuParams {
     pub fn new_from_snapshot(workdir: &str, qemu_id: usize, cpu: usize, params: &SnapshotVmParams, create_snapshot_file: bool) -> QemuParams{
     
         
-        let qemu_aux_buffer_filename = format!("{}/aux_buffer_{}", workdir, qemu_id);
-        let control_filename = format!("{}/interface_{}", workdir, qemu_id);
+        let qemu_aux_buffer_filename = format!("{workdir}/aux_buffer_{qemu_id}");
+        let control_filename = format!("{workdir}/interface_{qemu_id}");
 
         let mut cmd = vec![];
         cmd.push(params.qemu_binary.to_string());
 
         cmd.push("-drive".to_string());
-        cmd.push(format!("file={},format=raw,index=0,media=disk", params.hda.to_string()));
+        cmd.push(format!("file={},format=raw,index=0,media=disk", params.hda));
 
         if !params.debug {
             cmd.push("-display".to_string());
@@ -90,24 +90,23 @@ impl QemuParams {
 
         cmd.push("-chardev".to_string());
         cmd.push(format!(
-            "socket,server,path={},id=nyx_interface",
-            control_filename
+            "socket,server,path={control_filename},id=nyx_interface"
         ));
-    
+
         cmd.push("-device".to_string());
-        let mut nyx_ops = format!("nyx,chardev=nyx_interface");
+        let mut nyx_ops = "nyx,chardev=nyx_interface".to_string();
         nyx_ops += &format!(",bitmap_size={}", params.bitmap_size);
         nyx_ops += &format!(",input_buffer_size={}", params.input_buffer_size);
-        nyx_ops += &format!(",worker_id={}", qemu_id);
-        nyx_ops += &format!(",workdir={}", workdir);
+        nyx_ops += &format!(",worker_id={qemu_id}");
+        nyx_ops += &format!(",workdir={workdir}");
         nyx_ops += &format!(",sharedir={}", params.sharedir);
 
-        
+
         let mut i = 0;
         for filter in params.ipt_filters{
             if filter.a != 0 && filter.b != 0 {
                 nyx_ops += &format!(",ip{}_a={},ip{}_b={}", i, filter.a, i, filter.b);
-            i += 1;
+                i += 1;
             }
         }
 
@@ -136,12 +135,12 @@ impl QemuParams {
             },
             SnapshotPath::Reuse(path) => {
                 cmd.push("-fast_vm_reload".to_string());
-                cmd.push(format!("path={},load=on", path));
+                cmd.push(format!("path={path},load=on"));
             }
             SnapshotPath::DefaultPath => panic!(),
         }
-    
-        return QemuParams {
+
+        QemuParams {
             cmd,
             qemu_aux_buffer_filename,
             control_filename,
@@ -152,24 +151,36 @@ impl QemuParams {
             dump_python_code_for_inputs: params.dump_python_code_for_inputs,
             write_protected_input_buffer: params.write_protected_input_buffer,
             cow_primary_size: params.cow_primary_size,
-        };
+        }
     }
 
     pub fn new_from_kernel(workdir: &str, qemu_id: usize, params: &KernelVmParams, create_snapshot_file: bool) -> QemuParams {
 
-        let qemu_aux_buffer_filename = format!("{}/aux_buffer_{}", workdir, qemu_id);
-        let control_filename = format!("{}/interface_{}", workdir, qemu_id);
+        let qemu_aux_buffer_filename = format!("{workdir}/aux_buffer_{qemu_id}");
+        let control_filename = format!("{workdir}/interface_{qemu_id}");
 
-        let mut cmd = vec![];
-        cmd.push(params.qemu_binary.to_string());
-        cmd.push("-kernel".to_string());
-        cmd.push(params.kernel.to_string());
+        let mut cmd = vec![
+            params.qemu_binary.to_string(),
+            "-kernel".to_string(),
+            params.kernel.to_string(),
 
-        cmd.push("-initrd".to_string());
-        cmd.push(params.ramfs.to_string());
+            "-initrd".to_string(),
+            params.ramfs.to_string(),
 
-        cmd.push("-append".to_string());
-        cmd.push(params.qemu_args.to_string());
+            "-append".to_string(),
+            params.qemu_args.to_string(),
+
+            "-enable-kvm".to_string(),
+
+            "-net".to_string(),
+            "none".to_string(),
+
+            "-k".to_string(),
+            "de".to_string(),
+
+            "-m".to_string(),
+            params.ram_size.to_string(),
+        ];
 
         if !params.debug {
             cmd.push("-display".to_string());
@@ -183,37 +194,26 @@ impl QemuParams {
             cmd.push("none".to_string());
         }
 
-        cmd.push("-enable-kvm".to_string());
-
-        cmd.push("-net".to_string());
-        cmd.push("none".to_string());
-
-        cmd.push("-k".to_string());
-        cmd.push("de".to_string());
-
-        cmd.push("-m".to_string());
-        cmd.push(params.ram_size.to_string());
 
 
         cmd.push("-chardev".to_string());
         cmd.push(format!(
-            "socket,server,path={},id=nyx_interface",
-            control_filename
+            "socket,server,path={control_filename},id=nyx_interface"
         ));
 
         cmd.push("-device".to_string());
-        let mut nyx_ops = format!("nyx,chardev=nyx_interface");
+        let mut nyx_ops = "nyx,chardev=nyx_interface".to_string();
         nyx_ops += &format!(",bitmap_size={}", params.bitmap_size);
         nyx_ops += &format!(",input_buffer_size={}", params.input_buffer_size);
-        nyx_ops += &format!(",worker_id={}", qemu_id);
-        nyx_ops += &format!(",workdir={}", workdir);
+        nyx_ops += &format!(",worker_id={qemu_id}");
+        nyx_ops += &format!(",workdir={workdir}");
         nyx_ops += &format!(",sharedir={}", params.sharedir);
 
         let mut i = 0;
         for filter in params.ipt_filters{
             if filter.a != 0 && filter.b != 0 {
                 nyx_ops += &format!(",ip{}_a={:x},ip{}_b={:x}", i, filter.a, i, filter.b);
-            i += 1;
+                i += 1;
             }
         }
 
@@ -232,13 +232,13 @@ impl QemuParams {
         if create_snapshot_file {
             cmd.push("-fast_vm_reload".to_string());
             if qemu_id == 0{
-                cmd.push(format!("path={}/snapshot/,load=off", workdir));
+                cmd.push(format!("path={workdir}/snapshot/,load=off"));
             } else {
-                cmd.push(format!("path={}/snapshot/,load=on", workdir));
+                cmd.push(format!("path={workdir}/snapshot/,load=on"));
             }
         }
 
-        return QemuParams {
+        QemuParams {
             cmd,
             qemu_aux_buffer_filename,
             control_filename,
@@ -249,6 +249,6 @@ impl QemuParams {
             dump_python_code_for_inputs: params.dump_python_code_for_inputs,
             write_protected_input_buffer: params.write_protected_input_buffer,
             cow_primary_size: params.cow_primary_size,
-        };
+        }
     }
 }

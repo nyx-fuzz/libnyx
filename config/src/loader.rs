@@ -1,6 +1,5 @@
 use crate::config::*;
-use serde_derive::Serialize; 
-use serde_derive::Deserialize; 
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -82,10 +81,7 @@ fn default_cow_primary_size() -> u64 {
 }
 
 fn default_ipt_filter() -> IptFilter {
-    IptFilter{
-        a: 0,
-        b: 0,
-    }
+    IptFilter { a: 0, b: 0 }
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -31,7 +31,7 @@ pub extern "C" fn nyx_load_config(sharedir: *const c_char) -> *mut c_void {
     let cfg: NyxConfig = match NyxConfig::load(sharedir_r_str){
         Ok(x) => x,
         Err(msg) => {
-            println!("[!] libnyx config reader error: {}", msg);
+            println!("[!] libnyx config reader error: {msg}");
             return std::ptr::null_mut();
         }
     };
@@ -67,7 +67,7 @@ fn nyx_process_start(sharedir: *const c_char, workdir: *const c_char, worker_id:
     match NyxProcess::process_start(sharedir_r_str, workdir_r_str, worker_id, cpu_id, create_snapshot, input_buffer_size, input_buffer_write_protection) {
         Ok(x) => Box::into_raw(Box::new(x)),
         Err(msg) => {
-            println!("[!] libnyx failed to initialize QEMU-Nyx: {}", msg);
+            println!("[!] libnyx failed to initialize QEMU-Nyx: {msg}");
             std::ptr::null_mut() as *mut NyxProcess
         },
     }
@@ -102,7 +102,7 @@ pub extern "C" fn nyx_get_aux_buffer(nyx_process: * mut NyxProcess) -> *mut u8 {
         assert!(!nyx_process.is_null());
         assert!((nyx_process as usize) % std::mem::align_of::<NyxProcess>() == 0);
 
-        return (*nyx_process).aux_buffer_as_mut_ptr();
+        (*nyx_process).aux_buffer_as_mut_ptr()
     }
 }
 
@@ -132,7 +132,7 @@ pub extern "C" fn nyx_get_bitmap_buffer_size(nyx_process: * mut NyxProcess) -> u
         assert!(!nyx_process.is_null());
         assert!((nyx_process as usize) % std::mem::align_of::<NyxProcess>() == 0);
         //return (*nyx_process).process.bitmap.len();
-        return (*nyx_process).bitmap_buffer_size();
+        (*nyx_process).bitmap_buffer_size()
     }
 }
 

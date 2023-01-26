@@ -7,11 +7,11 @@ fn main() {
     println!("build.rs");
     let crate_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")
         .expect("CARGO_MANIFEST_DIR env var is not defined"));
-    println!("CARGO_MANIFEST_DIR: {:?}", crate_dir);
+    println!("CARGO_MANIFEST_DIR: {crate_dir:?}");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")
         .expect("OUT_DIR env var is not defined"));
-    println!("OUT_DIR: {:?}", out_dir);
+    println!("OUT_DIR: {out_dir:?}");
 
     let config = cbindgen::Config::from_file("cbindgen.toml")
         .expect("Unable to find cbindgen.toml configuration file");

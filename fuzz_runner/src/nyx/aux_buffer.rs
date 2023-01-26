@@ -1,5 +1,4 @@
-
-use core::ffi::c_void;
+use std::num::NonZeroUsize;
 use nix::sys::mman::*;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
@@ -62,7 +61,15 @@ impl AuxBuffer {
 
         let flags = MapFlags::MAP_SHARED;
         unsafe {
-            let ptr = mmap(0 as *mut c_void, 0x1000, prot, flags, file.into_raw_fd(), 0).unwrap();
+            let ptr = mmap(
+                None,
+                NonZeroUsize::new_unchecked(0x1000),
+                prot,
+                flags,
+                file.into_raw_fd(),
+                0,
+            )
+            .unwrap();
             let header = (ptr.add(HEADER_OFFSET) as *mut auxilary_buffer_header_s)
                 .as_mut()
                 .unwrap();
@@ -78,33 +85,33 @@ impl AuxBuffer {
             let misc = (ptr.add(MISC_OFFSET) as *mut auxilary_buffer_misc_s)
                 .as_mut()
                 .unwrap();
-            return Self {
+            Self {
                 header,
                 cap,
                 config,
                 result,
                 misc,
-            };
+            }
         }
     }
 
     pub fn new(file: File) -> Self {
-        return AuxBuffer::new_readonly(file, false);
+        AuxBuffer::new_readonly(file, false)
     }
 
     pub fn validate_header(&self) -> Result<(), String> {
         mem_barrier();
         let mgc = self.header.magic;
         if mgc != AUX_MAGIC {
-            return Err(format!("aux buffer magic mismatch {} != {}...\n[!] Probably the AUX buffer is corrupted?!", AUX_MAGIC, mgc));
+            return Err(format!("aux buffer magic mismatch {AUX_MAGIC} != {mgc}...\n[!] Probably the AUX buffer is corrupted?!"));
         }
         let version = self.header.version;
         if version != QEMU_PT_VERSION {
-            return Err(format!("aux buffer version mismatch {} != {}...\n[!] You are probably using either an outdated version of libnyx or QEMU-Nyx...", QEMU_PT_VERSION, version));
+            return Err(format!("aux buffer version mismatch {QEMU_PT_VERSION} != {version}...\n[!] You are probably using either an outdated version of libnyx or QEMU-Nyx..."));
         }
         let hash = self.header.hash;
         if hash != QEMU_PT_HASH {
-            return Err(format!("aux buffer hash mismatch {} != {}...\n[!] You are probably using either an outdated version of libnyx or QEMU-Nyx...", QEMU_PT_HASH, hash));
+            return Err(format!("aux buffer hash mismatch {QEMU_PT_HASH} != {hash}...\n[!] You are probably using either an outdated version of libnyx or QEMU-Nyx..."));
         }
         Ok(())
     }
@@ -149,7 +156,7 @@ pub struct auxilary_buffer_config_s {
     */
     //uint8_t pt_processing_mode;
     pub protect_payload_buffer: u8,
-      /* snapshot extension */
+    /* snapshot extension */
     pub discard_tmp_snapshot: u8,
 }
 
@@ -203,7 +210,7 @@ fn inspect_bytes(bs: &[u8]) -> String {
 impl auxilary_buffer_misc_s{
     pub fn as_slice(&self) -> &[u8]{
         assert!(self.len as usize <= self.data.len());
-        return &self.data[0..self.len as usize];
+        &self.data[0..self.len as usize]
     }
     pub fn as_string(&self) -> String{
         inspect_bytes(self.as_slice())
@@ -213,7 +220,7 @@ impl auxilary_buffer_misc_s{
 impl fmt::Debug for auxilary_buffer_misc_s {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("auxilary_buffer_misc_s")
-         .field("data", &inspect_bytes(self.as_slice()))
-         .finish()
+            .field("data", &inspect_bytes(self.as_slice()))
+            .finish()
     }
 }
