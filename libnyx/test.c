@@ -1,10 +1,9 @@
-
+#include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
+
 #include "libnyx.h"
 
-#include <stdio.h>
-#include <ctype.h>
- 
 #ifndef HEXDUMP_COLS
 #define HEXDUMP_COLS 16
 #endif
@@ -55,13 +54,12 @@ void hexdump(void *mem, unsigned int len)
 }
  
 
-int main(int argc, char** argv){
+int main(void){
   printf("YO\n");
 
+  uint8_t payload_bytes[] = "HALLO";
 
-  void* aux_buffer; 
-
-  void* ptr = nyx_new("/tmp/nyx_bash/");
+  void* ptr = nyx_new("/tmp/nyx_bash/", "", 0, sizeof(payload_bytes), false);
 
   printf("QEMU Rust Object Pointer: %p\n", ptr);
 
@@ -71,17 +69,17 @@ int main(int argc, char** argv){
 
   hexdump(aux, 16);
 
-  void* payload = nyx_get_payload_buffer(ptr);
+  void* payload_buf = nyx_get_input_buffer(ptr);
 
-  nyx_set_afl_input(ptr, "HALLO", 5);
+  nyx_set_afl_input(ptr, payload_bytes, sizeof(payload_bytes));
 
 
-  printf("QEMU Rust Payload Pointer: %p\n", payload);
+  printf("QEMU Rust Payload Pointer: %p\n", payload_buf);
 
   nyx_option_set_reload_mode(ptr, true);
   nyx_option_apply(ptr);
 
-  hexdump(payload, 16);
+  hexdump(payload_buf, 16);
 
   printf("About to run init\n");
   printf("INIT -> %d\n", nyx_exec(ptr));
@@ -89,7 +87,7 @@ int main(int argc, char** argv){
 
 
   for(int i = 0; i < 32; i++){
-        nyx_set_afl_input(ptr, "HALLO", 5);
+        nyx_set_afl_input(ptr, payload_bytes, sizeof(payload_bytes));
         printf("nyx_exec -> %d\n", nyx_exec(ptr));
         //nyx_print_aux_buffer(ptr);
   }

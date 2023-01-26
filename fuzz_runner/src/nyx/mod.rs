@@ -17,10 +17,10 @@ fn into_absolute_path(sharedir: &str) -> String{
     let srcdir = PathBuf::from(&sharedir);
 
     if srcdir.is_relative(){
-        return fs::canonicalize(&srcdir).unwrap().to_str().unwrap().to_string();
+        fs::canonicalize(&srcdir).unwrap().to_str().unwrap().to_string()
     }
     else{
-        return sharedir.to_string();
+        sharedir.to_string()
     }
 }
 
@@ -33,25 +33,22 @@ pub fn qemu_process_new_from_kernel(sharedir: String, cfg: &QemuKernelConfig, fu
         ram_size: fuzz_cfg.mem_limit,
         bitmap_size: fuzz_cfg.bitmap_size,
         debug: cfg.debug,
-        dump_python_code_for_inputs: match fuzz_cfg.dump_python_code_for_inputs{
-            None => false,
-            Some(x) => x,
-        },
+        dump_python_code_for_inputs: fuzz_cfg.dump_python_code_for_inputs.unwrap_or(false),
         write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
-        cow_primary_size: fuzz_cfg.cow_primary_size, 
+        cow_primary_size: fuzz_cfg.cow_primary_size,
         ipt_filters: fuzz_cfg.ipt_filters,
         input_buffer_size: fuzz_cfg.input_buffer_size,
         qemu_args: cfg.qemu_args.to_string(),
     };
     let qemu_id =  fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_kernel(&fuzz_cfg.workdir_path, qemu_id, &params, fuzz_cfg.threads > 1);
-   
+
     /*
     if qemu_id == 0{
         qemu_process::QemuProcess::prepare_workdir(&fuzz_cfg.workdir_path, fuzz_cfg.seed_pattern.clone());
     }
     */
-    return qemu_process::QemuProcess::new(qemu_params);
+    qemu_process::QemuProcess::new(qemu_params)
 }
 
 pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig,  fuzz_cfg: &FuzzerConfig) -> Result<QemuProcess, String> {
@@ -69,27 +66,24 @@ pub fn qemu_process_new_from_snapshot(sharedir: String, cfg: &QemuSnapshotConfig
     };
 
     let params = params::SnapshotVmParams {
-        qemu_binary: cfg.qemu_binary.to_string(),
-        hda: cfg.hda.to_string(),
+        qemu_binary: cfg.qemu_binary.clone(),
+        hda: cfg.hda.clone(),
         sharedir: into_absolute_path(&sharedir),
-        presnapshot: cfg.presnapshot.to_string(),
+        presnapshot: cfg.presnapshot.clone(),
         ram_size: fuzz_cfg.mem_limit,
         bitmap_size: fuzz_cfg.bitmap_size,
         debug: cfg.debug,
         snapshot_path,
-        dump_python_code_for_inputs: match fuzz_cfg.dump_python_code_for_inputs{
-            None => false,
-            Some(x) => x,
-        },
+        dump_python_code_for_inputs: fuzz_cfg.dump_python_code_for_inputs.unwrap_or(false),
         write_protected_input_buffer: fuzz_cfg.write_protected_input_buffer,
-        cow_primary_size: fuzz_cfg.cow_primary_size, 
+        cow_primary_size: fuzz_cfg.cow_primary_size,
         ipt_filters: fuzz_cfg.ipt_filters,
         input_buffer_size: fuzz_cfg.input_buffer_size,
     };
     let qemu_id = fuzz_cfg.thread_id;
     let qemu_params = params::QemuParams::new_from_snapshot(&fuzz_cfg.workdir_path, qemu_id, fuzz_cfg.cpu_pin_start_at, &params, fuzz_cfg.threads > 1);
 
-    return qemu_process::QemuProcess::new(qemu_params);
+    qemu_process::QemuProcess::new(qemu_params)
 }
 
 
@@ -108,24 +102,33 @@ mod tests {
                 .to_string(),
             kernel: "/home/kafl/Target-Components/linux_initramfs/bzImage-linux-4.15-rc7"
                 .to_string(),
-            ramfs: "/home/kafl/Target-Components/linux_initramfs/init.cpio.gz".to_string(),
             sharedir: "foo! invalid".to_string(),
+            ramfs: "/home/kafl/Target-Components/linux_initramfs/init.cpio.gz".to_string(),
             ram_size: 1000,
             bitmap_size: 0x1 << 16,
+            qemu_args: "".to_string(),
             debug: false,
+
             dump_python_code_for_inputs: false,
             write_protected_input_buffer: false,
-            kernel_args: "",
+            cow_primary_size: None,
+            ipt_filters: [
+                config::IptFilter { a: 0, b: 0 },
+                config::IptFilter { a: 0, b: 0 },
+                config::IptFilter { a: 0, b: 0 },
+                config::IptFilter { a: 0, b: 0 },
+            ],
+            input_buffer_size: 666,
         };
         let qemu_id = 1;
-        let qemu_params = QemuParams::new_from_kernel(workdir, qemu_id, &params);
+        let qemu_params = QemuParams::new_from_kernel(workdir, qemu_id, &params, false);
 
-        QemuProcess::prepare_workdir(&workdir, None);
+        QemuProcess::prepare_workdir(workdir, None);
 
-        let mut qemu_process = QemuProcess::new(qemu_params);
+        let mut qemu_process = QemuProcess::new(qemu_params).unwrap();
 
         for _i in 0..100 {
-            qemu_process.send_payload();
+            qemu_process.send_payload().unwrap();
         }
         println!("test done");
     }

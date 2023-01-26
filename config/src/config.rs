@@ -1,6 +1,5 @@
 use std::time::Duration;
-use serde_derive::Serialize; 
-use serde_derive::Deserialize; 
+use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::{Path};
 use crate::loader::*;
@@ -9,7 +8,7 @@ fn into_absolute_path(path_to_sharedir: &str, path_to_file: String) -> String {
     let path_to_default_config = Path::new(&path_to_file);
 
     if path_to_default_config.is_relative(){
-        let path = &format!("{}/{}", path_to_sharedir, path_to_file);
+        let path = &format!("{path_to_sharedir}/{path_to_file}");
         let absolute_path = Path::new(&path);
         return absolute_path.canonicalize().unwrap().to_str().unwrap().to_string();
     }
@@ -45,10 +44,10 @@ impl QemuKernelConfig{
     
         let qemu_args = "nokaslr oops=panic nopti ignore_rlimit_data".to_string();
         Self{
-            qemu_binary: qemu_binary,
-            kernel: kernel,
-            ramfs: ramfs,
-            qemu_args: qemu_args,
+            qemu_binary,
+            kernel,
+            ramfs,
+            qemu_args,
             debug: config.debug.or(default.debug).expect("no debug specified"),
         }
     }
@@ -81,9 +80,9 @@ impl QemuSnapshotConfig{
         presnapshot = into_absolute_path(default_config_folder, presnapshot);
 
         Self{
-            qemu_binary: qemu_binary,
-            hda: hda,
-            presnapshot: presnapshot,
+            qemu_binary,
+            hda,
+            presnapshot,
             snapshot_path: config.snapshot_path.or(default.snapshot_path).expect("no snapshot_path specified"),
             debug: config.debug.or(default.debug).expect("no debug specified"),
         }
@@ -117,7 +116,7 @@ pub enum SnapshotPlacement {
 }
 
 impl std::str::FromStr for SnapshotPlacement {
-    type Err = ron::Error;
+    type Err = ron::error::SpannedError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         ron::de::from_str(s)
     }
@@ -151,11 +150,11 @@ impl FuzzerConfig{
             None
         }
         else{
-            Some(into_absolute_path(&sharedir, seed_path))
+            Some(into_absolute_path(sharedir, seed_path))
         };
 
         Self{
-            spec_path: format!("{}/spec.msgp",sharedir),
+            spec_path: format!("{sharedir}/spec.msgp"),
             workdir_path: config.workdir_path.or(default.workdir_path).expect("no workdir_path specified"),
             bitmap_size: config.bitmap_size.or(default.bitmap_size).expect("no bitmap_size specified"),
             input_buffer_size: config.input_buffer_size,
@@ -170,7 +169,7 @@ impl FuzzerConfig{
             dump_python_code_for_inputs: config.dump_python_code_for_inputs.or(default.dump_python_code_for_inputs),
             exit_after_first_crash: config.exit_after_first_crash.unwrap_or(default.exit_after_first_crash.unwrap_or(false)),
             write_protected_input_buffer: config.write_protected_input_buffer,
-            cow_primary_size: if config.cow_primary_size != 0 { Some( config.cow_primary_size as u64) } else { None },
+            cow_primary_size: if config.cow_primary_size != 0 { Some( config.cow_primary_size) } else { None },
             ipt_filters: [
                 config.ip0,
                 config.ip1,
@@ -190,27 +189,27 @@ pub struct Config {
 impl Config{
     pub fn new_from_loader(sharedir: &str, default_config_folder: &str, default: ConfigLoader, config: ConfigLoader) -> Self{
         Self{
-            runner: FuzzRunnerConfig::new_from_loader(&default_config_folder, default.runner, config.runner),
-            fuzz:  FuzzerConfig::new_from_loader(&sharedir, default.fuzz, config.fuzz),
+            runner: FuzzRunnerConfig::new_from_loader(default_config_folder, default.runner, config.runner),
+            fuzz:  FuzzerConfig::new_from_loader(sharedir, default.fuzz, config.fuzz),
         }
     }
 
     pub fn new_from_sharedir(sharedir: &str) -> Result<Self, String> {
-        let path_to_config = format!("{}/config.ron", sharedir);
+        let path_to_config = format!("{sharedir}/config.ron");
 
         let cfg_file = match File::open(&path_to_config){
             Ok(x) => {x},
-            Err(_) => return Err(format!("file or folder not found ({})!", path_to_config)),
+            Err(_) => return Err(format!("file or folder not found ({path_to_config})!")),
         }; 
 
         let mut cfg: ConfigLoader = match ron::de::from_reader(cfg_file){
             Ok(x) => {x},
-            Err(x) => return Err(format!("invalid configuration ({})!", x)),
+            Err(x) => return Err(format!("invalid configuration ({x})!")),
         };
 
         let include_default_config_path = match cfg.include_default_config_path{
             Some(x) => {x},
-            None => return Err(format!("no path to default configuration given!")),
+            None => return Err("no path to default configuration given!".to_string()),
         };
 
         let default_path = into_absolute_path(sharedir, include_default_config_path);
@@ -219,14 +218,14 @@ impl Config{
 
         let default_file = match File::open(default_path.clone()){
             Ok(x) => x,
-            Err(_) => return Err(format!("default config not found ({})!", default_path)),
+            Err(_) => return Err(format!("default config not found ({default_path})!")),
         };
          
         let default: ConfigLoader = match ron::de::from_reader(default_file){
             Ok(x) => {x},
-            Err(x) => return Err(format!("invalid default configuration ({})!", x)),
+            Err(x) => return Err(format!("invalid default configuration ({x})!")),
         };
 
-        Ok(Self::new_from_loader(&sharedir, &default_config_folder, default, cfg))
+        Ok(Self::new_from_loader(sharedir, default_config_folder, default, cfg))
     }
 }

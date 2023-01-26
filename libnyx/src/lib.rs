@@ -35,12 +35,12 @@ impl fmt::Display for NyxReturnValue {
             NyxReturnValue::Crash                 => "Crash".to_string(),
             NyxReturnValue::Timeout               => "Timeout".to_string(),
             NyxReturnValue::InvalidWriteToPayload => "InvalidWriteToPayload".to_string(),
-            NyxReturnValue::Abort(reason) => format!("Abort: {}", reason),
+            NyxReturnValue::Abort(reason) => format!("Abort: {reason}"),
             NyxReturnValue::Error                 => "Error".to_string(),
             _                                     => "Unknown".to_string(),
         };
 
-        write!(f, "{}", nyx_return_value_str)
+        write!(f, "{nyx_return_value_str}")
     }
 }
 
@@ -55,7 +55,7 @@ pub struct NyxConfig {
 
 impl NyxConfig {
     pub fn load(sharedir: &str) -> Result<NyxConfig, String> {
-        match Config::new_from_sharedir(&sharedir){
+        match Config::new_from_sharedir(sharedir){
             Ok(x) => Ok(NyxConfig{
                 config: x
             }),
@@ -68,7 +68,7 @@ impl NyxConfig {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
             _ => return None,
         };
-        return Some(process_cfg.qemu_binary);
+        Some(process_cfg.qemu_binary)
     }
 
     pub fn kernel_image_path(&self) -> Option<String>{
@@ -76,7 +76,7 @@ impl NyxConfig {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
             _ => return None,
         };
-        return Some(process_cfg.kernel);
+        Some(process_cfg.kernel)
     }
 
     pub fn ramfs_image_path(&self) -> Option<String>{
@@ -84,7 +84,7 @@ impl NyxConfig {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
             _ => return None,
         };
-        return Some(process_cfg.ramfs);
+        Some(process_cfg.ramfs)
     }
 
     pub fn qemu_kernel_args(&self) -> Option<String> {
@@ -92,7 +92,7 @@ impl NyxConfig {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
             _ => return None,
         };
-        return Some(process_cfg.qemu_args);
+        Some(process_cfg.qemu_args)
     }
 
     pub fn set_qemu_kernel_args(&mut self, args: String) {
@@ -146,7 +146,7 @@ impl NyxProcess {
         let mut config = fuzzer_config.fuzz;
         let runner_cfg = fuzzer_config.runner;
     
-        config.workdir_path = format!("{}", workdir);
+        config.workdir_path = workdir.to_string();
     
         let sdir = sharedir.clone();
     
@@ -157,7 +157,7 @@ impl NyxProcess {
             QemuProcess::wait_for_workdir(&config.workdir_path);
         }
     
-        match runner_cfg.clone() {
+        match runner_cfg {
             FuzzRunnerConfig::QemuSnapshot(cfg) => {
                 qemu_process_new_from_snapshot(sdir.to_string(), &cfg, &config)            
             },
@@ -168,10 +168,10 @@ impl NyxProcess {
     }
 
     fn process_start(sharedir: &str, workdir: &str, worker_id: u32, cpu_id: u32, create_snapshot: bool, input_buffer_size: Option<u32>, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
-        let mut cfg: Config = match Config::new_from_sharedir(&sharedir){
+        let mut cfg: Config = match Config::new_from_sharedir(sharedir){
             Ok(x) => x,
             Err(msg) => {
-                return Err(format!("[!] libnyx config reader error: {}", msg));
+                return Err(format!("[!] libnyx config reader error: {msg}"));
             }
         };
     
@@ -186,9 +186,9 @@ impl NyxProcess {
         }
     
         cfg.fuzz.thread_id = worker_id as usize;
-        cfg.fuzz.threads = if create_snapshot { 2 as usize } else { 1 as usize };
+        cfg.fuzz.threads = if create_snapshot { 2_usize } else { 1_usize };
             
-        cfg.fuzz.workdir_path = format!("{}", workdir);
+        cfg.fuzz.workdir_path = workdir.to_string();
 
         match Self::start_process(sharedir, workdir, cfg,  worker_id){
             Ok(x) => Ok(NyxProcess{
@@ -202,10 +202,10 @@ impl NyxProcess {
         let workdir = config.config.fuzz.workdir_path.clone();
 
         let mut config= config.clone();
-        config.config.fuzz.threads = if create_snapshot { 2 as usize } else { 1 as usize };
+        config.config.fuzz.threads = if create_snapshot { 2_usize } else { 1_usize };
         config.config.fuzz.thread_id = worker_id as usize;
 
-        match Self::start_process(sharedir, &workdir, config.config.clone(), worker_id) {
+        match Self::start_process(sharedir, &workdir, config.config, worker_id) {
             Ok(x) => Ok(NyxProcess{
                 process: x,
             }),
@@ -327,7 +327,7 @@ impl NyxProcess {
 
     pub fn set_input_ptr(&mut self, buffer: *const u8, size: u32) {
         unsafe{
-            std::ptr::copy(&size, self.process.payload.as_mut_ptr() as *mut u32, 1 as usize);
+            std::ptr::copy(&size, self.process.payload.as_mut_ptr() as *mut u32, 1_usize);
             std::ptr::copy(buffer, self.process.payload[std::mem::size_of::<u32>()..].as_mut_ptr(), std::cmp::min(size as usize, self.input_buffer_size()));
         }
     }
