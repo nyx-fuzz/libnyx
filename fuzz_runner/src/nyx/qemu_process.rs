@@ -1,4 +1,5 @@
 use core::ffi::c_void;
+use std::os::unix::prelude::FromRawFd;
 use std::path::PathBuf;
 use nix::sys::mman::*;
 use std::fs;
@@ -33,8 +34,12 @@ use crate::nyx::mem_barrier::mem_barrier;
 use crate::nyx::params::QemuParams;
 
 pub struct QemuProcess {
-    pub process: Child,
-    pub aux: AuxBuffer,
+
+    process: Child,
+
+    /* ptr to the aux buffer */
+    aux: AuxBuffer,
+
     pub feedback_data: FeedbackBuffer,
     pub ijon_buffer: &'static mut [u8],
     pub ctrl: UnixStream,
@@ -46,6 +51,8 @@ pub struct QemuProcess {
     shm_work_dir: PathBuf,
     #[allow(unused)]
     shm_file_lock: File,
+
+    hprintf_file: Option<File>,
 }
 
 fn execute_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
@@ -168,12 +175,6 @@ impl QemuProcess {
         let ijon_shared = make_shared_data(&ijon_buffer_shm_f, 0x1000);
         let ijon_feedback_buffer = make_shared_ijon_data(ijon_buffer_shm_f, 0x1000);
 
-        
-        thread::sleep(time::Duration::from_secs(1));
-
-        thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
-        
-
         let mut child = if params.dump_python_code_for_inputs{
             Command::new(&params.cmd[0])
             .args(&params.cmd[1..])
@@ -188,12 +189,6 @@ impl QemuProcess {
             .expect("failed to execute process")
         };
 
-        
-        thread::sleep(time::Duration::from_secs(1));
-
-        thread::sleep(time::Duration::from_millis(200*params.qemu_id as u64));
-        
-
         let mut control = loop {
             match UnixStream::connect(&params.control_filename) {
                 Ok(stream) => break stream,
@@ -207,19 +202,15 @@ impl QemuProcess {
             return Err(format!("cannot launch QEMU-Nyx..."));
         }
 
-        let aux_shm_f = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&params.qemu_aux_buffer_filename)
-            .expect("couldn't open aux buffer file");
-        aux_shm_f.set_len(0x1000).unwrap();
+        let mut aux_buffer = {
+            let aux_shm_f = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&params.qemu_aux_buffer_filename)
+                .expect("couldn't open aux buffer file");
 
-        let aux_shm_f = OpenOptions::new()
-            .write(true)
-            .read(true)
-            .open(&params.qemu_aux_buffer_filename)
-            .expect("couldn't open aux buffer file");
-        let mut aux_buffer = AuxBuffer::new(aux_shm_f);
+            AuxBuffer::new(aux_shm_f)
+        };
 
         match aux_buffer.validate_header(){
             Err(x) => {
@@ -237,12 +228,17 @@ impl QemuProcess {
             aux_buffer.config.changed = 1;
         }
 
+        let mut hprintf_file = match params.hprintf_fd {
+            Some(fd) =>  Some(unsafe { File::from_raw_fd(fd) }),
+            None => None,
+        }; 
+
         loop {
 
             match aux_buffer.result.exec_result_code {
                 NYX_HPRINTF     => {
                     let len = aux_buffer.misc.len;
-                    print!("{}", String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).yellow());
+                    QemuProcess::output_hprintf(&mut hprintf_file, &String::from_utf8_lossy(&aux_buffer.misc.data[0..len as usize]).yellow());
                 },
                 NYX_ABORT => {
                     let len = aux_buffer.misc.len;
@@ -313,9 +309,32 @@ impl QemuProcess {
             params,
             shm_work_dir,
             shm_file_lock: file_lock,
+            hprintf_file,
         });
     }
 
+    fn output_hprintf(hprintf_file: &mut Option<File>, msg: &str){
+        match hprintf_file {
+            Some(ref mut f) => {
+                f.write_fmt(format_args!("{}", msg)).unwrap();
+            },
+            None => {
+                print!("{}", msg);
+            }
+        }
+    }
+
+    pub fn aux_buffer(&self) -> &AuxBuffer{
+        &self.aux
+    }
+
+    pub fn aux_buffer_mut(&mut self) -> &mut AuxBuffer{
+        &mut self.aux
+    }
+
+    pub fn set_hprintf_fd(&mut self, fd: i32){
+        self.hprintf_file = unsafe { Some(File::from_raw_fd(fd)) };
+    }
 
     pub fn send_payload(&mut self) -> io::Result<()>{
         let mut old_address: u64 = 0;
@@ -355,7 +374,7 @@ impl QemuProcess {
             match self.aux.result.exec_result_code {
                 NYX_HPRINTF     => {
                     let len = self.aux.misc.len;
-                    print!("{}", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).yellow());
+                    QemuProcess::output_hprintf(&mut self.hprintf_file, &String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).yellow());
                     continue;
                 },
                 NYX_ABORT       => {
