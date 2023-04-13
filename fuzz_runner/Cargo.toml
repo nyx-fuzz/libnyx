@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nix = "0.17.0"
+nix = "0.20.2"
 time = "0.2.9"
 subprocess = "0.2.4"
 libc = "0.2.68"
