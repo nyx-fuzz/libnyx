@@ -5,6 +5,8 @@ use std::fs::File;
 use std::path::{Path};
 use crate::loader::*;
 
+use libc::fcntl;
+
 fn into_absolute_path(path_to_sharedir: &str, path_to_file: String) -> String {
     let path_to_default_config = Path::new(&path_to_file);
 
@@ -128,9 +130,6 @@ pub struct FuzzerConfig {
     pub input_buffer_size: usize,
     pub mem_limit: usize,
     pub time_limit: Duration,
-    pub threads: usize,
-    pub thread_id: usize,
-    pub cpu_pin_start_at: usize,
     pub seed_path: Option<String>,
     pub dict: Vec<Vec<u8>>,
     pub snapshot_placement: SnapshotPlacement,
@@ -158,9 +157,6 @@ impl FuzzerConfig{
             input_buffer_size: config.input_buffer_size,
             mem_limit: config.mem_limit.or(default.mem_limit).expect("no mem_limit specified"),
             time_limit: config.time_limit.or(default.time_limit).expect("no time_limit specified"),
-            threads: config.threads.or(default.threads).expect("no threads specified"),
-            thread_id: config.thread_id.or(default.thread_id).expect("no thread_id specified"),
-            cpu_pin_start_at: config.cpu_pin_start_at.or(default.cpu_pin_start_at).expect("no cpu_pin_start_at specified"),
             seed_path: seed_path_value,
             dict: config.dict.or(default.dict).expect("no dict specified"),
             snapshot_placement: config.snapshot_placement.or(default.snapshot_placement).expect("no snapshot_placement specified"),
@@ -179,9 +175,112 @@ impl FuzzerConfig{
 }
 
 #[derive(Clone, Debug)]
+pub enum QemuNyxRole {
+    /* Standalone mode, snapshot is kept in memory and not serialized. */
+    StandAlone,
+
+    /* Serialize the VM snapshot after the root snapshot has been created.
+     * The serialized snapshot will be stored in the workdir and the snapshot 
+     * will later be used by the child processes. */
+    Parent,
+
+    /* Wait for the snapshot to be created by the parent process and 
+     * deserialize it from the workdir. This way all child processes can
+     * mmap() the snapshot files and access the snapshot directly via shared memory. 
+     * Consequently, this will result in a much lower memory usage compared to spawning
+     * multiple StandAlone-type instances. */
+    Child,
+}
+
+#[derive(Clone, Debug)]
+/* runtime specific configuration */
+pub struct RuntimeConfig {
+    /*  Configurable option to redirect hprintf to a file descriptor.
+     *  If None, hprintf will be redirected to stdout via println!().
+     */
+    hprintf_fd: Option<i32>,
+    
+    /* Configurable option to specify the role of the process.
+     *  If StandAlone, the process will not serialize the snapshot and keep everything in memory.
+     *  If Parent, the process will create a snapshot and serialize it.
+     *  If Child, the process will wait for the parent to create a snapshot and deserialize it. */
+    process_role: QemuNyxRole,
+
+    /* Configurable option to reuse a snapshot from a previous run (useful to avoid VM bootstrapping). */
+    reuse_snapshot_path: Option<String>,
+
+    /* enable advanced VM debug mode (such as spawning a VNC server per VM) */
+    debug_mode: bool,
+
+    /* worker_id of the current QEMU Nyx instance */
+    worker_id: usize,
+}
+
+impl RuntimeConfig{
+    pub fn new() -> Self {
+        Self{
+            hprintf_fd: None,
+            process_role: QemuNyxRole::StandAlone,
+            reuse_snapshot_path: None,
+            debug_mode: false,
+            worker_id: 0,
+        }
+    }
+
+    pub fn hprintf_fd(&self) -> Option<i32> {
+        self.hprintf_fd
+    }
+
+    pub fn process_role(&self) -> &QemuNyxRole {
+        &self.process_role
+    }
+
+    pub fn set_hpintf_fd(&mut self, fd: i32){
+        /* sanitiy check to prevent invalid file descriptors via F_GETFD */
+        unsafe { 
+            /* TODO: return error instead of panicking */
+            assert!(fcntl(fd, libc::F_GETFD) != -1); 
+        };
+
+        self.hprintf_fd = Some(fd);
+    }
+
+    pub fn set_process_role(&mut self, role: QemuNyxRole){
+        self.process_role = role;
+    }
+
+    pub fn reuse_root_snapshot_path(&self) -> Option<String> {
+        self.reuse_snapshot_path.clone()
+    }
+
+    pub fn set_reuse_snapshot_path(&mut self, path: String){
+        let path = Path::new(&path).canonicalize().unwrap().to_str().unwrap().to_string();
+        self.reuse_snapshot_path = Some(path);
+    }
+
+    pub fn debug_mode(&self) -> bool {
+        self.debug_mode
+    }
+
+    pub fn set_debug_mode(&mut self, debug_mode: bool){
+        self.debug_mode = debug_mode;
+    }
+
+    pub fn worker_id(&self) -> usize {
+        self.worker_id
+    }
+
+    pub fn set_worker_id(&mut self, thread_id: usize){
+        self.worker_id = thread_id;
+    }
+    
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub runner: FuzzRunnerConfig,
     pub fuzz: FuzzerConfig,
+    pub runtime: RuntimeConfig,
 }
 
 impl Config{
@@ -189,6 +288,7 @@ impl Config{
         Self{
             runner: FuzzRunnerConfig::new_from_loader(&default_config_folder, default.runner, config.runner),
             fuzz:  FuzzerConfig::new_from_loader(&sharedir, default.fuzz, config.fuzz),
+            runtime: RuntimeConfig::new(),
         }
     }
 
