@@ -62,7 +62,7 @@ impl QemuParams {
         if debug {
             cmd.push("mon:stdio".to_string());
         } else {
-            cmd.push("stdio".to_string());
+            cmd.push("none".to_string());
         }
 
         cmd.push("-enable-kvm".to_string());
