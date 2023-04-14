@@ -1,11 +1,27 @@
+/* 
+    libnyx Rust API
+
+    Copyright (C) 2021 Sergej Schumilo
+    This file is part of libnyx.
+
+    libnyx is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 2 of the License, or
+    (at your option) any later version.
+    libnyx is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+    You should have received a copy of the GNU General Public License
+    along with libnyx.  If not, see <http://www.gnu.org/licenses/>.
+ */
 extern crate libc;
 
-use config::{Config, FuzzRunnerConfig};
+use config::{Config, FuzzRunnerConfig, QemuNyxRole};
 
-use fuzz_runner::nyx::qemu_process_new_from_kernel;
-use fuzz_runner::nyx::qemu_process_new_from_snapshot;
 use fuzz_runner::nyx::qemu_process::QemuProcess;
 use fuzz_runner::nyx::aux_buffer::{NYX_SUCCESS, NYX_CRASH, NYX_TIMEOUT, NYX_INPUT_WRITE, NYX_ABORT};
+use libc::fcntl;
 
 use std::fmt;
 
@@ -22,6 +38,14 @@ pub enum NyxReturnValue {
     Error,
     IoError,    // QEMU process has died for some reason
     Abort,      // Abort hypercall called
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub enum NyxProcessRole {
+    StandAlone,
+    Parent,
+    Child,
 }
 
 impl fmt::Display for NyxReturnValue {
@@ -48,18 +72,42 @@ pub struct NyxProcess {
 #[derive(Clone, Debug)]
 pub struct NyxConfig {
     config: Config,
+    sharedir_path: String,
 }
 
 impl NyxConfig {
+
+    /* Loads a given Nyx share-dir and returns a result object containing the config object.
+     * The config object is later used to access the config object via specific config functions.
+     */
     pub fn load(sharedir: &str) -> Result<NyxConfig, String> {
+        /* TODO: perform some additional sanity checks on the sharedir (such as checking if the bootstrap scripts exist) */
         match Config::new_from_sharedir(&sharedir){
             Ok(x) => Ok(NyxConfig{
-                config: x
+                config: x,
+                sharedir_path: sharedir.to_string()
             }),
             Err(x) => Err(x),
         }
     }
 
+    /* Simple debug function to print the entire config object to stdout. */
+    pub fn print(&self){
+        println!("[*] Nyx config (share-dir: {}):", self.sharedir_path());
+        println!("  - workdir_path                  -> {}", self.workdir_path());
+        println!("  - input_buffer_size             -> {}", self.input_buffer_size());
+        println!("  - input_buffer_write_protection -> {}", self.input_buffer_write_protection());
+        println!("  - hprintf_fd                    -> {}", self.hprintf_fd());
+        println!("  - process_role:                 -> {:?}", self.process_role());         
+
+    }
+
+    /* Returns the path to the actual sharedir. */
+    pub fn sharedir_path(&self) -> String {
+        self.sharedir_path.clone()
+    }
+
+    /* Returns the path to the configured qemu binary. */
     pub fn qemu_binary_path(&self) -> Option<String>{
         let process_cfg= match self.config.runner.clone() {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
@@ -68,6 +116,7 @@ impl NyxConfig {
         return Some(process_cfg.qemu_binary);
     }
 
+    /* Returns the path to the configured kernel image (if Nyx is configured to run in kernel mode). */
     pub fn kernel_image_path(&self) -> Option<String>{
         let process_cfg= match self.config.runner.clone() {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
@@ -76,6 +125,7 @@ impl NyxConfig {
         return Some(process_cfg.kernel);
     }
 
+    /* Returns the path to the configured initrd image (if Nyx is configured to run in kernel mode). */
     pub fn ramfs_image_path(&self) -> Option<String>{
         let process_cfg= match self.config.runner.clone() {
             FuzzRunnerConfig::QemuKernel(cfg) => cfg,
@@ -84,24 +134,98 @@ impl NyxConfig {
         return Some(process_cfg.ramfs);
     }
 
+    /* Returns the configured timeout threshold as a std::time::Duration object. */
     pub fn timeout(&self) -> std::time::Duration {
         self.config.fuzz.time_limit
     }
 
+    /* Returns the configured spec path (deprecated). */
     pub fn spec_path(&self) -> String{
         self.config.fuzz.spec_path.clone()
     }
 
+    /* Returns the configured trace bitmap size (might be reconfigured later by the agent). */
     pub fn bitmap_size(&self) -> usize{
         self.config.fuzz.bitmap_size
     }
 
+    /* Returns the configured workdir path. */
     pub fn workdir_path(&self) -> &str {
         &self.config.fuzz.workdir_path
     }
 
+    /* Returns the actual size of the input buffer. */
+    pub fn input_buffer_size(&self) -> usize {
+        self.config.fuzz.input_buffer_size
+    }
+
+    /* Returns the config value of the input buffer write protection of the agent (guest). */
+    pub fn input_buffer_write_protection(&self) -> bool {
+        self.config.fuzz.write_protected_input_buffer
+    }
+
+    /* Sets the path to the workdir. */
     pub fn set_workdir_path(&mut self, path: String) {
         self.config.fuzz.workdir_path = path;
+    }
+
+    /* Set the size of the input buffer (must be a multiple of x86_64_PAGE_SIZE -> 4096). */
+    pub fn set_input_buffer_size(&mut self, size: usize) {
+        if size % 0x1000 != 0 {
+            /* TODO: return error */
+            panic!("[ ] Input buffer size must be a multiple of x86_64_PAGE_SIZE (4096)!");
+        }
+        self.config.fuzz.input_buffer_size = size;
+    }
+
+    /* Set the input buffer write protection of the agent (guest). */
+    pub fn set_input_buffer_write_protection(&mut self, write_protected: bool) {
+        self.config.fuzz.write_protected_input_buffer = write_protected;
+    }
+
+    /* Returns the current configured FD to redirect hprintf() calls to (returns -1 if None is set). */
+    pub fn hprintf_fd(&self) -> i32 {
+        /* TODO: fix me */
+        match self.config.runtime.hprintf_fd() {
+            Some(fd) => fd,
+            None => -1,
+        }
+    }
+
+    /* Sets the FD to redirect hprintf() calls to (must be a valid FD and must not be closed after this call). */
+    pub fn set_hprintf_fd(&mut self, fd: i32) {
+        self.config.runtime.set_hpintf_fd(fd);
+    }
+
+    /* Sets the process role of the fuzz runner */
+    pub fn set_process_role(&mut self, role: NyxProcessRole) {
+        let _role = match role {
+            NyxProcessRole::Parent => QemuNyxRole::Parent,
+            NyxProcessRole::Child => QemuNyxRole::Child,
+            NyxProcessRole::StandAlone => QemuNyxRole::StandAlone,
+        };
+
+        self.config.runtime.set_process_role(_role);
+    }
+    
+    /* Configures the path to the snapshot file to be reused (optional). */
+    pub fn set_reuse_snapshot_path(&mut self, path: String) {
+        self.config.runtime.set_reuse_snapshot_path(path);
+    }
+
+    /* Returns the currently configured process role of the fuzz runner. */
+    pub fn process_role(&self) -> &QemuNyxRole {
+        self.config.runtime.process_role()
+    }
+
+    /* Returns the current QEMU-Nyx worker ID. */
+    pub fn worker_id(&self) -> usize {
+        self.config.runtime.worker_id()
+    }
+
+    /* Sets the QEMU-Nyx worker ID. */
+    pub fn set_worker_id(&mut self, worker_id: usize) {
+        self.config.runtime.set_worker_id(worker_id);
     }
 
     pub fn dict(&self) -> Vec<Vec<u8>> {
@@ -117,56 +241,12 @@ impl fmt::Display for NyxConfig {
 
 impl NyxProcess {
 
-    fn start_process(sharedir: &str, workdir: &str, fuzzer_config: Config,  worker_id: u32) -> Result<QemuProcess, String> {
+    pub fn new(config: &mut NyxConfig, worker_id: usize) -> Result<NyxProcess, String> {
 
-        let mut config = fuzzer_config.fuzz;
-        let runner_cfg = fuzzer_config.runner;
-    
-        config.workdir_path = format!("{}", workdir);
-    
-        let sdir = sharedir.clone();
-    
-        if worker_id == 0 {
-            QemuProcess::prepare_workdir(&config.workdir_path, config.seed_path.clone());
-        }
-        else{
-            QemuProcess::wait_for_workdir(&config.workdir_path);
-        }
-    
-        match runner_cfg.clone() {
-            FuzzRunnerConfig::QemuSnapshot(cfg) => {
-                qemu_process_new_from_snapshot(sdir.to_string(), &cfg, &config)            
-            },
-            FuzzRunnerConfig::QemuKernel(cfg) => {
-                qemu_process_new_from_kernel(sdir.to_string(), &cfg, &config)
-            }
-        }
-    }
+        let sharedir = config.sharedir_path();
+        config.set_worker_id(worker_id);
 
-    fn process_start(sharedir: &str, workdir: &str, worker_id: u32, cpu_id: u32, create_snapshot: bool, input_buffer_size: Option<u32>, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
-        let mut cfg: Config = match Config::new_from_sharedir(&sharedir){
-            Ok(x) => x,
-            Err(msg) => {
-                return Err(format!("[!] libnyx config reader error: {}", msg));
-            }
-        };
-    
-        cfg.fuzz.write_protected_input_buffer = input_buffer_write_protection;
-    
-        /* todo: add sanity check */
-        cfg.fuzz.cpu_pin_start_at = cpu_id as usize;
-    
-        match input_buffer_size{
-            Some(x) => { cfg.fuzz.input_buffer_size = x as usize; },
-            None => {},
-        }
-    
-        cfg.fuzz.thread_id = worker_id as usize;
-        cfg.fuzz.threads = if create_snapshot { 2 as usize } else { 1 as usize };
-            
-        cfg.fuzz.workdir_path = format!("{}", workdir);
-
-        match Self::start_process(sharedir, workdir, cfg,  worker_id){
+        match fuzz_runner::nyx::qemu_process_new(sharedir.to_string(), &config.config){
             Ok(x) => Ok(NyxProcess{
                 process: x,
             }),
@@ -174,41 +254,9 @@ impl NyxProcess {
         }
     }
 
-    pub fn from_config(sharedir: &str, config: &NyxConfig, worker_id: u32, create_snapshot: bool) -> Result<NyxProcess, String>{
-        let workdir = config.config.fuzz.workdir_path.clone();
-
-        let mut config= config.clone();
-        config.config.fuzz.threads = if create_snapshot { 2 as usize } else { 1 as usize };
-        config.config.fuzz.thread_id = worker_id as usize;
-
-        match Self::start_process(sharedir, &workdir, config.config.clone(), worker_id) {
-            Ok(x) => Ok(NyxProcess{
-                process: x,
-            }),
-            Err(x) => Err(x),
-        }
-    }
-
-    pub fn new(sharedir: &str, workdir: &str, cpu_id: u32, input_buffer_size: u32, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
-        Self::process_start(sharedir, workdir, 0, cpu_id, false, Some(input_buffer_size), input_buffer_write_protection)
-    }
-    
-    pub fn new_parent(sharedir: &str, workdir: &str, cpu_id: u32, input_buffer_size: u32, input_buffer_write_protection: bool) -> Result<NyxProcess, String> {
-        Self::process_start(sharedir, workdir, 0, cpu_id, true, Some(input_buffer_size), input_buffer_write_protection)
-    }
-    
-    pub fn new_child(sharedir: &str, workdir: &str, cpu_id: u32, worker_id: u32) -> Result<NyxProcess, String> {
-        if worker_id == 0 {
-            println!("[!] libnyx failed -> worker_id=0 cannot be used for child processes");
-            Err("worker_id=0 cannot be used for child processes".to_string())
-        }
-        else{
-            Self::process_start(sharedir, workdir, worker_id, cpu_id, true, None, false)
-        }
-    }
 
     pub fn aux_buffer_as_mut_ptr(&self) -> *mut u8 {
-        std::ptr::addr_of!(self.process.aux.header.magic) as *mut u8
+        std::ptr::addr_of!(self.process.aux_buffer().header.magic) as *mut u8
     }
     
     pub fn input_buffer(&self) -> &[u8] {
@@ -244,48 +292,48 @@ impl NyxProcess {
     }
     
     pub fn option_set_reload_mode(&mut self, enable: bool) {
-        self.process.aux.config.reload_mode = if enable {1} else {0};
+        self.process.aux_buffer_mut().config.reload_mode = if enable {1} else {0};
     }
 
     pub fn option_set_redqueen_mode(&mut self, enable: bool) {
-        self.process.aux.config.redqueen_mode = if enable {1} else {0};
+        self.process.aux_buffer_mut().config.redqueen_mode = if enable {1} else {0};
     }
 
     pub fn option_set_trace_mode(&mut self, enable: bool) {
-        self.process.aux.config.trace_mode = if enable {1} else {0};
+        self.process.aux_buffer_mut().config.trace_mode = if enable {1} else {0};
     }
 
     pub fn option_set_delete_incremental_snapshot(&mut self, enable: bool) {
-        self.process.aux.config.discard_tmp_snapshot = if enable {1} else {0};
+        self.process.aux_buffer_mut().config.discard_tmp_snapshot = if enable {1} else {0};
     }
 
     pub fn option_set_timeout(&mut self, timeout_sec: u8, timeout_usec: u32) {
-        self.process.aux.config.timeout_sec = timeout_sec;
-        self.process.aux.config.timeout_usec = timeout_usec;
+        self.process.aux_buffer_mut().config.timeout_sec = timeout_sec;
+        self.process.aux_buffer_mut().config.timeout_usec = timeout_usec;
     }
     
     pub fn option_apply(&mut self) {
-        self.process.aux.config.changed = 1;
+        self.process.aux_buffer_mut().config.changed = 1;
     }
 
     pub fn aux_misc(&self) -> Vec<u8>{
-        self.process.aux.misc.as_slice().to_vec()
+        self.process.aux_buffer().misc.as_slice().to_vec()
     }
 
     pub fn aux_tmp_snapshot_created(&self) -> bool {
-        self.process.aux.result.tmp_snapshot_created != 0
+        self.process.aux_buffer().result.tmp_snapshot_created != 0
     }
 
     pub fn aux_string(&self) -> String {
-        let len = self.process.aux.misc.len;
-        String::from_utf8_lossy(&self.process.aux.misc.data[0..len as usize]).to_string()
+        let len = self.process.aux_buffer().misc.len;
+        String::from_utf8_lossy(&self.process.aux_buffer().misc.data[0..len as usize]).to_string()
     }
      
     pub fn exec(&mut self) -> NyxReturnValue {
         match self.process.send_payload(){
             Err(_) =>  NyxReturnValue::IoError,
             Ok(_) => {
-                match self.process.aux.result.exec_result_code {
+                match self.process.aux_buffer().result.exec_result_code {
                     NYX_SUCCESS     => NyxReturnValue::Normal,
                     NYX_CRASH       => NyxReturnValue::Crash,
                     NYX_TIMEOUT     => NyxReturnValue::Timeout,
@@ -307,4 +355,19 @@ impl NyxProcess {
     pub fn set_input(&mut self, buffer: &[u8], size: u32) {
         self.set_input_ptr(buffer.as_ptr(), size);
     }
+
+    pub fn set_hprintf_fd(&mut self, fd: i32) {
+
+        /* sanitiy check to prevent invalid file descriptors via F_GETFD */
+        unsafe { 
+            assert!(fcntl(fd, libc::F_GETFD) != -1); 
+        };
+
+        self.process.set_hprintf_fd(fd);
+    }
+
+}
+
+pub fn remove_work_dir(workdir: &str) -> Result<(), String> {
+    fuzz_runner::nyx::qemu_process::remove_workdir_safe(workdir)
 }
