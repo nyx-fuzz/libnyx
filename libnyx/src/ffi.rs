@@ -275,3 +275,24 @@ pub extern "C" fn nyx_set_hprintf_fd(nyx_process: * mut NyxProcess, fd: i32) {
         (*__nyx_process_check_ptr(nyx_process)).process.set_hprintf_fd(fd);
     }
 }
+
+/* Helper function to remove a given Nyx workdir safely.
+ * This function will return an error if the path does not exist or it does 
+ * not appear to be a Nyx workdir (e.g. specific sub directories are 
+ * missing). */
+#[no_mangle]
+pub extern "C" fn nyx_remove_work_dir(workdir: *const c_char) -> bool {
+    unsafe{
+        let workdir = CStr::from_ptr(workdir).to_str().unwrap();
+
+        match remove_work_dir(workdir) {
+            Ok(_) => {
+                true
+            },
+            Err(e) => {
+                eprintln!("[!] libnyx failed to remove workdir: {}", e);
+                false
+            }
+        }
+    }
+}

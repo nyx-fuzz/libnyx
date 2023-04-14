@@ -367,3 +367,7 @@ impl NyxProcess {
     }
 
 }
+
+pub fn remove_work_dir(workdir: &str) -> Result<(), String> {
+    fuzz_runner::nyx::qemu_process::remove_workdir_safe(workdir)
+}

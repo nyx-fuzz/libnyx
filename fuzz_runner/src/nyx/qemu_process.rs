@@ -569,3 +569,38 @@ impl QemuProcess {
         (shm_work_dir_path, file_lock)
     }
 }
+
+/* Helper function to remove a Nyx workdir safely. Returns an error if 
+ * expected sub dirs are missing or the path does not exist */
+pub fn remove_workdir_safe(workdir: &str) -> Result<(), String> {
+    let folders = vec![
+        "/corpus/normal",
+        "/corpus/crash",
+        "/corpus/kasan",
+        "/corpus/timeout",
+        "/imports",
+        "/seeds",
+        "/snapshot",
+        "/forced_imports",
+    ];
+
+    if !Path::new(&format!("{}/", workdir)).exists() {
+        return Err(format!("\"{}/\" does not exists", workdir));
+    }
+
+    /* check if all sub dirs exists */
+    for folder in folders.iter() {
+        if !Path::new(&format!("{}/{}", workdir, folder)).exists() {
+            return Err(format!("\"{}/{}\" does not exists", workdir, folder));
+        }
+    }
+
+    /* remove if all sub dirs exists */
+    for folder in folders.iter() {
+        let _ = fs::remove_dir_all(format!("{}/{}", workdir, folder));
+    }
+
+    let _ = fs::remove_dir_all(workdir);
+
+    return Ok(());
+}

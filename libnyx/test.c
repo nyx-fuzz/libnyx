@@ -59,6 +59,7 @@ void hexdump(void *mem, unsigned int len)
     }
 }
  
+#define WORKDIR_PATH "/tmp/wdir"
 
 int main(int argc, char** argv){
 
@@ -69,7 +70,7 @@ int main(int argc, char** argv){
 
     //nyx_config_debug(nyx_config);
 
-    nyx_config_set_workdir_path(nyx_config, "/tmp/wdir");
+    nyx_config_set_workdir_path(nyx_config, WORKDIR_PATH);
     nyx_config_set_input_buffer_size(nyx_config, 0x2000);
 
     int fd = open("/tmp/nyx_test_output.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -113,4 +114,9 @@ int main(int argc, char** argv){
     }
 
     nyx_shutdown(nyx_runner);
+
+    if(!nyx_remove_work_dir(WORKDIR_PATH) ){
+        printf("Error: Failed to remove work dir\n");
+    }
+
 }
