@@ -62,7 +62,14 @@ impl QemuParams {
         if debug {
             cmd.push("mon:stdio".to_string());
         } else {
-            cmd.push("none".to_string());
+            match fuzzer_config.runner {
+                FuzzRunnerConfig::QemuKernel(_) => {
+                    cmd.push("none".to_string());
+                }
+                FuzzRunnerConfig::QemuSnapshot(_) => {
+                    cmd.push("stdio".to_string());
+                }
+            }
         }
 
         cmd.push("-enable-kvm".to_string());
