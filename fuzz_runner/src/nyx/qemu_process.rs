@@ -1,4 +1,3 @@
-use core::ffi::c_void;
 use std::os::unix::prelude::FromRawFd;
 use std::path::PathBuf;
 use nix::sys::mman::*;
@@ -75,8 +74,10 @@ fn run_qemu(ctrl: &mut UnixStream) -> io::Result<()>{
 fn make_shared_data(file: &File, size: usize) -> &'static mut [u8] {
     let prot = ProtFlags::PROT_READ | ProtFlags::PROT_WRITE;
     let flags = MapFlags::MAP_SHARED;
+    let null_addr = std::num::NonZeroUsize::new(0);
+    let wrapped_size = std::num::NonZeroUsize::new(size).unwrap();
     unsafe {
-        let ptr = mmap(0 as *mut c_void, size, prot, flags, file.as_raw_fd(), 0).unwrap();
+        let ptr = mmap(null_addr, wrapped_size, prot, flags, file.as_raw_fd(), 0).unwrap();
 
         let data = std::slice::from_raw_parts_mut(ptr as *mut u8, size);
         return data;
@@ -86,8 +87,10 @@ fn make_shared_data(file: &File, size: usize) -> &'static mut [u8] {
 fn make_shared_ijon_data(file: File, size: usize) -> FeedbackBuffer {
     let prot = ProtFlags::PROT_READ | ProtFlags::PROT_WRITE;
     let flags = MapFlags::MAP_SHARED;
+    let null_addr = std::num::NonZeroUsize::new(0);
+    let wrapped_size = std::num::NonZeroUsize::new(size).unwrap();
     unsafe {
-        let ptr = mmap(std::ptr::null_mut::<c_void>(), size, prot, flags, file.into_raw_fd(), 0).unwrap();
+        let ptr = mmap(null_addr, wrapped_size, prot, flags, file.into_raw_fd(), 0).unwrap();
         FeedbackBuffer::new((ptr as *mut SharedFeedbackData).as_mut().unwrap())
     }
 }

@@ -8,7 +8,7 @@ name = "libnyx"
 crate-type = ["staticlib", "dylib"]
 
 [build-dependencies]
-cbindgen = "0.19"
+cbindgen = "0.24.3"
 
 [dependencies]
 config={path="../config"}

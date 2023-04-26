@@ -1,5 +1,4 @@
 
-use core::ffi::c_void;
 use nix::sys::mman::*;
 use std::fs::File;
 use std::os::unix::io::IntoRawFd;
@@ -59,8 +58,10 @@ impl AuxBuffer {
         }
 
         let flags = MapFlags::MAP_SHARED;
+        let null_addr = std::num::NonZeroUsize::new(0);
+        let size = std::num::NonZeroUsize::new(AUX_BUFFER_SIZE).unwrap();
         unsafe {
-            let ptr = mmap(0 as *mut c_void, 0x1000, prot, flags, file.into_raw_fd(), 0).unwrap();
+            let ptr = mmap(null_addr, size, prot, flags, file.into_raw_fd(), 0).unwrap();
             let header = (ptr.add(HEADER_OFFSET) as *mut auxilary_buffer_header_s)
                 .as_mut()
                 .unwrap();
