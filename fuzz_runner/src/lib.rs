@@ -3,7 +3,6 @@ extern crate glob;
 extern crate nix;
 extern crate serde_derive;
 extern crate snafu;
-extern crate tempfile;
 extern crate timeout_readwrite;
 extern crate config;
 
