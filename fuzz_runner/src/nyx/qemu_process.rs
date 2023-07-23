@@ -212,7 +212,7 @@ impl QemuProcess {
                 .open(&params.qemu_aux_buffer_filename)
                 .expect("couldn't open aux buffer file");
 
-            AuxBuffer::new(aux_shm_f)
+            AuxBuffer::new(aux_shm_f, params.aux_buffer_size)
         };
 
         match aux_buffer.validate_header(){
@@ -373,16 +373,15 @@ impl QemuProcess {
                 }
             }
             
-
             match self.aux.result.exec_result_code {
                 NYX_HPRINTF     => {
                     let len = self.aux.misc.len;
-                    QemuProcess::output_hprintf(&mut self.hprintf_file, &String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).yellow());
+                    QemuProcess::output_hprintf(&mut self.hprintf_file, &String::from_utf8_lossy(&self.aux.misc_data_slice()[0..len as usize]).yellow());
                     continue;
                 },
                 NYX_ABORT       => {
                     let len = self.aux.misc.len;
-                    println!("[!] libnyx: agent abort() -> \"{}\"", String::from_utf8_lossy(&self.aux.misc.data[0..len as usize]).red());
+                    println!("[!] libnyx: agent abort() -> \"{}\"", String::from_utf8_lossy(&self.aux.misc_data_slice()[0..len as usize]).red());
                     break;
                 },
                 NYX_SUCCESS | NYX_CRASH | NYX_INPUT_WRITE | NYX_TIMEOUT      => {

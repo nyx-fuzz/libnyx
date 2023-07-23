@@ -46,11 +46,12 @@ pub struct AuxBuffer {
     pub config: &'static mut auxilary_buffer_config_s,
     pub result: &'static mut auxilary_buffer_result_s,
     pub misc: &'static mut auxilary_buffer_misc_s,
+    size: usize, /* total size of the aux buffer */
 }
 
 impl AuxBuffer {
 
-    pub fn new_readonly(file: File, read_only: bool) -> Self {
+    pub fn new_readonly(file: File, read_only: bool, size: usize) -> Self {
 
         let mut prot = ProtFlags::PROT_READ;
         if !read_only{
@@ -59,9 +60,9 @@ impl AuxBuffer {
 
         let flags = MapFlags::MAP_SHARED;
         let null_addr = std::num::NonZeroUsize::new(0);
-        let size = std::num::NonZeroUsize::new(AUX_BUFFER_SIZE).unwrap();
+        let aux_buffer_alloc_size = std::num::NonZeroUsize::new(size).unwrap();
         unsafe {
-            let ptr = mmap(null_addr, size, prot, flags, file.into_raw_fd(), 0).unwrap();
+            let ptr = mmap(null_addr, aux_buffer_alloc_size, prot, flags, file.into_raw_fd(), 0).unwrap();
             let header = (ptr.add(HEADER_OFFSET) as *mut auxilary_buffer_header_s)
                 .as_mut()
                 .unwrap();
@@ -83,12 +84,27 @@ impl AuxBuffer {
                 config,
                 result,
                 misc,
+                size,
             };
         }
     }
 
-    pub fn new(file: File) -> Self {
-        return AuxBuffer::new_readonly(file, false);
+    pub fn new(file: File, size: usize) -> Self {
+        return AuxBuffer::new_readonly(file, false, size);
+    }
+
+    pub fn size(&self) -> usize {
+        return self.size;
+    }
+
+    /* This is a somewhat hacky way of returning a slice of the total misc area */
+    pub fn misc_slice(&self) -> &[u8] {
+        return unsafe { std::slice::from_raw_parts(self.misc as *const auxilary_buffer_misc_s as *const u8, self.size - MISC_OFFSET) };
+    }
+
+    /* same... */
+    pub fn misc_data_slice(&self) -> &[u8] {
+        return unsafe { std::slice::from_raw_parts((self.misc as *const auxilary_buffer_misc_s as *const u8).offset(std::mem::size_of::<u16>() as isize), self.size - MISC_OFFSET - std::mem::size_of::<u16>()) };
     }
 
     pub fn validate_header(&self) -> Result<(), String> {
@@ -199,6 +215,7 @@ fn inspect_bytes(bs: &[u8]) -> String {
     }
     visible
 }
+
 impl auxilary_buffer_misc_s{
     pub fn as_slice(&self) -> &[u8]{
         assert!(self.len as usize <= self.data.len());
@@ -209,6 +226,7 @@ impl auxilary_buffer_misc_s{
     }
 }
 
+/* FIXME: will fail if the aux_buffer is > 4KB in size */
 impl fmt::Debug for auxilary_buffer_misc_s {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("auxilary_buffer_misc_s")

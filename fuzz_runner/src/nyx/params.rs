@@ -14,6 +14,7 @@ pub struct QemuParams {
     pub cow_primary_size: Option<u64>,
     pub hprintf_fd: Option<i32>,
 
+    pub aux_buffer_size: usize,
 }
 
 impl QemuParams {
@@ -96,6 +97,7 @@ impl QemuParams {
         nyx_ops += &format!(",worker_id={}", qemu_id);
         nyx_ops += &format!(",workdir={}", workdir);
         nyx_ops += &format!(",sharedir={}", sharedir);
+        nyx_ops += &format!(",aux_buffer_size={}", fuzzer_config.runtime.aux_buffer_size());
 
         let mut i = 0;
         for filter in fuzzer_config.fuzz.ipt_filters{
@@ -185,6 +187,7 @@ impl QemuParams {
             write_protected_input_buffer: fuzzer_config.fuzz.write_protected_input_buffer,
             cow_primary_size: fuzzer_config.fuzz.cow_primary_size,
             hprintf_fd: fuzzer_config.runtime.hprintf_fd(),
+            aux_buffer_size: fuzzer_config.runtime.aux_buffer_size(),
         }
     }
 

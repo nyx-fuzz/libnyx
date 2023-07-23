@@ -141,6 +141,17 @@ pub extern "C" fn nyx_config_set_reuse_snapshot_path(config: * mut c_void, reuse
     }
 }
 
+/* FFI function to set the aux_buffer size */
+#[no_mangle]
+pub extern "C" fn nyx_config_set_aux_buffer_size(config: * mut c_void, aux_buffer_size: u32) -> bool {
+    let cfg = __nyx_config_check_ptr(config);
+
+    assert_eq!(aux_buffer_size > 0, true);
+    unsafe{
+        return NyxConfig::set_aux_buffer_size(&mut *cfg, aux_buffer_size as usize);
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn nyx_new(config: * mut c_void, worker_id: u32) -> * mut NyxProcess {
     
