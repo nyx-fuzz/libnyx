@@ -7,6 +7,8 @@ use crate::loader::*;
 
 use libc::fcntl;
 
+const DEFAULT_AUX_BUFFER_SIZE: usize = 4096;
+
 fn into_absolute_path(path_to_sharedir: &str, path_to_file: String) -> String {
     let path_to_default_config = Path::new(&path_to_file);
 
@@ -214,6 +216,9 @@ pub struct RuntimeConfig {
 
     /* worker_id of the current QEMU Nyx instance */
     worker_id: usize,
+
+    /* aux_buffer size */
+    aux_buffer_size: usize,
 }
 
 impl RuntimeConfig{
@@ -224,6 +229,7 @@ impl RuntimeConfig{
             reuse_snapshot_path: None,
             debug_mode: false,
             worker_id: 0,
+            aux_buffer_size: DEFAULT_AUX_BUFFER_SIZE,
         }
     }
 
@@ -272,6 +278,20 @@ impl RuntimeConfig{
 
     pub fn set_worker_id(&mut self, thread_id: usize){
         self.worker_id = thread_id;
+    }
+
+    pub fn set_aux_buffer_size(&mut self, aux_buffer_size: usize) -> bool{
+
+        if aux_buffer_size < DEFAULT_AUX_BUFFER_SIZE || (aux_buffer_size & 0xfff) != 0 {
+            return false;
+        }
+
+        self.aux_buffer_size = aux_buffer_size;
+        return true
+    }
+
+    pub fn aux_buffer_size(&self) -> usize {
+        self.aux_buffer_size
     }
     
 }

@@ -228,6 +228,11 @@ impl NyxConfig {
         self.config.runtime.set_worker_id(worker_id);
     }
 
+    /* Sets the QEMU-Nyx aux buffer size (must be a multiple of 4KB; default value is 4KB). */
+    pub fn set_aux_buffer_size(&mut self, size: usize) -> bool{
+        return self.config.runtime.set_aux_buffer_size(size);
+    }
+
     pub fn dict(&self) -> Vec<Vec<u8>> {
         self.config.fuzz.dict.clone()
     }
@@ -257,6 +262,10 @@ impl NyxProcess {
 
     pub fn aux_buffer_as_mut_ptr(&self) -> *mut u8 {
         std::ptr::addr_of!(self.process.aux_buffer().header.magic) as *mut u8
+    }
+
+    pub fn aux_buffer_size(&self) -> usize {
+        self.process.aux_buffer().size()
     }
     
     pub fn input_buffer(&self) -> &[u8] {
@@ -317,7 +326,11 @@ impl NyxProcess {
     }
 
     pub fn aux_misc(&self) -> Vec<u8>{
-        self.process.aux_buffer().misc.as_slice().to_vec()
+        self.process.aux_buffer().misc_slice().to_vec()
+    }
+
+    pub fn aux_data_misc(&self) -> Vec<u8>{
+        self.process.aux_buffer().misc_data_slice().to_vec()
     }
 
     pub fn aux_tmp_snapshot_created(&self) -> bool {
@@ -326,7 +339,7 @@ impl NyxProcess {
 
     pub fn aux_string(&self) -> String {
         let len = self.process.aux_buffer().misc.len;
-        String::from_utf8_lossy(&self.process.aux_buffer().misc.data[0..len as usize]).to_string()
+        String::from_utf8_lossy(&self.process.aux_buffer().misc_data_slice()[0..len as usize]).to_string()
     }
      
     pub fn exec(&mut self) -> NyxReturnValue {
