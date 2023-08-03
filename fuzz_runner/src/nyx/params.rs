@@ -129,7 +129,10 @@ impl QemuParams {
                 FuzzRunnerConfig::QemuKernel(_) => {
 
                     match fuzzer_config.runtime.process_role() {
-                        QemuNyxRole::StandAlone => {},
+                        QemuNyxRole::StandAlone => {
+                            cmd.push("-fast_vm_reload".to_string());
+                            cmd.push(format!("path={}/snapshot/,load=off,skip_serialization=on", workdir));
+                        },
                         QemuNyxRole::Parent => {
                             cmd.push("-fast_vm_reload".to_string());
                             cmd.push(format!("path={}/snapshot/,load=off", workdir));
