@@ -157,7 +157,7 @@ impl QemuParams {
                         },
                         QemuNyxRole::Child => {
                             cmd.push("-fast_vm_reload".to_string());
-                            cmd.push(format!("path={}/snapshot/,load=on,pre_path={}", workdir, x.presnapshot));
+                            cmd.push(format!("path={}/snapshot/,load=on", workdir));
                         },
                     };
                 },
