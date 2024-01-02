@@ -150,8 +150,11 @@ impl QemuParams {
                     match fuzzer_config.runtime.process_role() {
                         QemuNyxRole::StandAlone => {
                             cmd.push("-fast_vm_reload".to_string());
-                            cmd.push(format!("path={}/snapshot/,load=off,pre_path={},skip_serialization=on", workdir, x.presnapshot));
-
+                            if x.presnapshot.is_empty() {
+                                cmd.push(format!("path={}/snapshot/,load=off,skip_serialization=on", workdir));
+                            } else {
+                                cmd.push(format!("path={}/snapshot/,load=off,pre_path={},skip_serialization=on", workdir, x.presnapshot));
+                            }
                         },
                         QemuNyxRole::Parent => {
                             cmd.push("-fast_vm_reload".to_string());
