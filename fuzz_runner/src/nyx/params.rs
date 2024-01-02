@@ -1,3 +1,4 @@
+use std::time::Duration;
 use crate::{config::{Config, FuzzRunnerConfig, QemuNyxRole}, QemuProcess};
 
 pub struct QemuParams {
@@ -15,6 +16,7 @@ pub struct QemuParams {
     pub hprintf_fd: Option<i32>,
 
     pub aux_buffer_size: usize,
+    pub time_limit: Duration,
 }
 
 impl QemuParams {
@@ -191,6 +193,7 @@ impl QemuParams {
             cow_primary_size: fuzzer_config.fuzz.cow_primary_size,
             hprintf_fd: fuzzer_config.runtime.hprintf_fd(),
             aux_buffer_size: fuzzer_config.runtime.aux_buffer_size(),
+            time_limit: fuzzer_config.fuzz.time_limit
         }
     }
 
