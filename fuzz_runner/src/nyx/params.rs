@@ -46,7 +46,7 @@ impl QemuParams {
             FuzzRunnerConfig::QemuSnapshot(x) => {
                 cmd.push(x.qemu_binary.to_string());
                 cmd.push("-drive".to_string());
-                cmd.push(format!("file={},format=raw,index=0,media=disk", x.hda.to_string()));
+                cmd.push(format!("file={},index=0,media=disk", x.hda.to_string()));
             },
         }
 
