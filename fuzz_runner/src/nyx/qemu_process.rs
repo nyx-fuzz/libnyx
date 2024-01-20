@@ -205,7 +205,7 @@ impl QemuProcess {
             return Err(format!("cannot launch QEMU-Nyx..."));
         }
 
-        let mut aux_buffer = {
+        let aux_buffer = {
             let aux_shm_f = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -291,12 +291,12 @@ impl QemuProcess {
             1 => println!("[!] libnyx: coverage mode: compile-time instrumentation"),
             _ => panic!("unkown aux_buffer.cap.agent_trace_bitmap value"),
         };
-        
+
         println!("[!] libnyx: qemu #{} is ready:", params.qemu_id);
 
         aux_buffer.config.reload_mode = 1;
-        aux_buffer.config.timeout_sec = 0;
-        aux_buffer.config.timeout_usec = 500_000;
+        aux_buffer.config.timeout_sec = params.time_limit.as_secs() as u8;
+        aux_buffer.config.timeout_usec = params.time_limit.subsec_micros();
         aux_buffer.config.changed = 1;
 
         return Ok(QemuProcess {
