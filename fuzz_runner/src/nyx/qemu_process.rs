@@ -572,6 +572,12 @@ impl QemuProcess {
     }
 }
 
+impl Drop for QemuProcess {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 /* Helper function to remove a Nyx workdir safely. Returns an error if 
  * expected sub dirs are missing or the path does not exist */
 pub fn remove_workdir_safe(workdir: &str) -> Result<(), String> {
