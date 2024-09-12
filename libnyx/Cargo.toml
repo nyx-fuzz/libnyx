@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "libnyx"
-crate-type = ["staticlib", "dylib"]
+crate-type = ["lib", "staticlib", "dylib"]
 
 [build-dependencies]
 cbindgen = "0.24.3"
