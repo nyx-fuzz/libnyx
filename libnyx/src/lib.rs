@@ -134,6 +134,13 @@ impl NyxConfig {
         return Some(process_cfg.ramfs);
     }
 
+    /* Returns the SHA1 target hash (basically the content of the TARGET_HASH file).
+     * If the TARGET_HASH file does not exist, this function returns None. 
+     */
+    pub fn target_hash(&self) -> Option<[u8; 20]> {
+        self.config.fuzz.target_hash
+    }
+
     /* Returns the configured timeout threshold as a std::time::Duration object. */
     pub fn timeout(&self) -> std::time::Duration {
         self.config.fuzz.time_limit

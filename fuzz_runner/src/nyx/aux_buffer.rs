@@ -20,7 +20,7 @@ pub const NYX_INPUT_WRITE: u8   = 4;
 pub const NYX_ABORT: u8         = 5;
 
 
-const AUX_BUFFER_SIZE: usize = 4096;
+pub const AUX_BUFFER_SIZE: usize = 4096;
 
 const AUX_MAGIC: u64 = 0x54502d554d4551_u64;
 const QEMU_PT_VERSION: u16 = 3; /* let's start at 1 for the initial version using the aux buffer */

@@ -1,4 +1,4 @@
-use fuzz_runner::nyx::aux_buffer;
+use fuzz_runner::nyx::aux_buffer::{self, AUX_BUFFER_SIZE};
 
 use clap::{App, Arg, AppSettings};
 
@@ -135,7 +135,7 @@ fn main() {
         .read(true)
         .open(aux_buffer_file)
         .expect("couldn't open aux buffer file");
-    let aux_buffer = aux_buffer::AuxBuffer::new_readonly(aux_shm_f, true);
+    let aux_buffer = aux_buffer::AuxBuffer::new_readonly(aux_shm_f, true, AUX_BUFFER_SIZE);
 
     aux_buffer.validate_header().unwrap();
 

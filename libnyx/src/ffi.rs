@@ -60,6 +60,16 @@ pub extern "C" fn nyx_config_load(sharedir: *const c_char) -> *mut c_void {
     Box::into_raw(Box::new(cfg)) as *mut c_void
 }
 
+#[no_mangle]
+pub extern "C" fn nyx_config_free(config: * mut c_void) {
+    if config.is_null() { return; }
+    let cfg = __nyx_config_check_ptr(config);
+
+    unsafe {
+        drop(Box::from_raw(cfg));
+    }
+}
+
 /* Simple debug function to print the entire config object to stdout. */
 #[no_mangle]
 pub extern "C" fn nyx_config_debug(config: * mut c_void) {
@@ -200,6 +210,36 @@ pub extern "C" fn nyx_get_bitmap_buffer(nyx_process: * mut NyxProcess) -> *mut u
 pub extern "C" fn nyx_get_bitmap_buffer_size(nyx_process: * mut NyxProcess) -> usize {
     unsafe{
         return (*__nyx_process_check_ptr(nyx_process)).bitmap_buffer_size();
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn nyx_get_target_hash(config: * mut c_void, buffer: *mut u8) -> bool {
+    let cfg = __nyx_config_check_ptr(config);
+
+    unsafe{
+        match NyxConfig::target_hash(&mut *cfg) {
+            Some(mut x) => {
+                let val = x.as_mut_ptr();
+                std::ptr::copy(val, buffer, 20);
+                true
+            },
+            None => false,
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn nyx_get_target_hash64(config: * mut c_void) -> u64 {
+    let cfg = __nyx_config_check_ptr(config);
+
+    unsafe{
+        match NyxConfig::target_hash(&mut *cfg) {
+            Some(x) => {
+                u64::from_be_bytes(x[0..8].try_into().unwrap())
+            },
+            None => 0,
+        }
     }
 }
 

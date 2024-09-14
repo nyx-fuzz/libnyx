@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::time::Duration;
 use serde_derive::Serialize; 
 use serde_derive::Deserialize; 
@@ -140,8 +141,32 @@ pub struct FuzzerConfig {
     pub write_protected_input_buffer: bool,
     pub cow_primary_size: Option<u64>,
     pub ipt_filters: [IptFilter;4],
+    pub target_hash: Option<[u8; 20]>
 }
 impl FuzzerConfig{
+
+    fn load_target_hash(sharedir: &str) -> Option<[u8; 20]> {
+        let mut file = File::open(format!("{}/TARGET_HASH", sharedir)).ok()?;
+        let mut content = String::new();
+        file.read_to_string(&mut content).ok()?;
+    
+        let content = content.trim();
+
+        if content.len() < 40 {
+            return None;
+        }
+    
+        let mut bytes = [0u8; 20];
+        for i in 0..20 {
+            match u8::from_str_radix(&content[2 * i..2 * i + 2], 16) {
+                Ok(byte) => bytes[i] = byte,
+                Err(_) => return None, 
+            }
+        }
+    
+        Some(bytes)
+    }
+
     pub fn new_from_loader(sharedir: &str, default: FuzzerConfigLoader, config: FuzzerConfigLoader) -> Self {
 
         let seed_path = config.seed_path.or(default.seed_path).unwrap();
@@ -151,6 +176,8 @@ impl FuzzerConfig{
         else{
             Some(into_absolute_path(&sharedir, seed_path))
         };
+
+        let target_hash = Self::load_target_hash(&sharedir);
 
         Self{
             spec_path: format!("{}/spec.msgp",sharedir),
@@ -172,6 +199,7 @@ impl FuzzerConfig{
                 config.ip2,
                 config.ip3,
             ],
+            target_hash: target_hash,
         }
     }
 }

@@ -9,7 +9,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
- 
+#include <stdlib.h>
+#include <string.h>
+
 #ifndef HEXDUMP_COLS
 #define HEXDUMP_COLS 16
 #endif
@@ -68,6 +70,15 @@ int main(int argc, char** argv){
 
     void* nyx_config = nyx_config_load("/tmp/nyx_libxml2/");
 
+    uint8_t* target_hash = malloc(20);
+    memset(target_hash, 0, 20);
+    if (nyx_get_target_hash(nyx_config, target_hash) == true) {
+        hexdump(target_hash, 20);
+    }
+
+    printf("TARGET-HASH: %lx\n", nyx_get_target_hash64(nyx_config));
+    free(target_hash);
+
     //nyx_config_debug(nyx_config);
 
     nyx_config_set_workdir_path(nyx_config, WORKDIR_PATH);
@@ -118,5 +129,6 @@ int main(int argc, char** argv){
     if(!nyx_remove_work_dir(WORKDIR_PATH) ){
         printf("Error: Failed to remove work dir\n");
     }
+    nyx_config_free(nyx_config);
 
 }
