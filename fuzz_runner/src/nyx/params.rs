@@ -12,6 +12,7 @@ pub struct QemuParams {
 
     pub dump_python_code_for_inputs: bool,
     pub write_protected_input_buffer: bool,
+    pub dump_pt_trace: bool,
     pub cow_primary_size: Option<u64>,
     pub hprintf_fd: Option<i32>,
 
@@ -100,6 +101,7 @@ impl QemuParams {
         nyx_ops += &format!(",workdir={}", workdir);
         nyx_ops += &format!(",sharedir={}", sharedir);
         nyx_ops += &format!(",aux_buffer_size={}", fuzzer_config.runtime.aux_buffer_size());
+        nyx_ops += &format!(",dump_pt_trace={}", fuzzer_config.fuzz.dump_pt_trace);
 
         let mut i = 0;
         for filter in fuzzer_config.fuzz.ipt_filters{
@@ -196,7 +198,8 @@ impl QemuParams {
             cow_primary_size: fuzzer_config.fuzz.cow_primary_size,
             hprintf_fd: fuzzer_config.runtime.hprintf_fd(),
             aux_buffer_size: fuzzer_config.runtime.aux_buffer_size(),
-            time_limit: fuzzer_config.fuzz.time_limit
+            time_limit: fuzzer_config.fuzz.time_limit,
+            dump_pt_trace: fuzzer_config.fuzz.dump_pt_trace,
         }
     }
 
