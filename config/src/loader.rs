@@ -64,6 +64,12 @@ pub struct FuzzerConfigLoader {
     pub snapshot_placement: Option<SnapshotPlacement>,
     pub dump_python_code_for_inputs: Option<bool>,
     pub exit_after_first_crash: Option<bool>,
+    #[serde(default = "default_dump_pt_trace")]
+    pub dump_pt_trace: bool,
+}
+
+fn default_dump_pt_trace() -> bool {
+    false
 }
 
 fn default_input_buffer_size() -> usize {

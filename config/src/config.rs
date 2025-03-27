@@ -141,7 +141,8 @@ pub struct FuzzerConfig {
     pub write_protected_input_buffer: bool,
     pub cow_primary_size: Option<u64>,
     pub ipt_filters: [IptFilter;4],
-    pub target_hash: Option<[u8; 20]>
+    pub target_hash: Option<[u8; 20]>,
+    pub dump_pt_trace: bool,
 }
 impl FuzzerConfig{
 
@@ -200,6 +201,7 @@ impl FuzzerConfig{
                 config.ip3,
             ],
             target_hash: target_hash,
+            dump_pt_trace: config.dump_pt_trace,
         }
     }
 }
