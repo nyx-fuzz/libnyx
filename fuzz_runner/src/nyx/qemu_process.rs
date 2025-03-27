@@ -100,9 +100,7 @@ impl QemuProcess {
     pub fn new(params: QemuParams) -> Result<QemuProcess, String> {
         Self::prepare_redqueen_workdir(&params.workdir, params.qemu_id);
 
-        if params.qemu_id == 0{
-            println!("[!] libnyx: spawning qemu with:\n {}", params.cmd.join(" "));
-        }
+        println!("[!] libnyx: spawning qemu with:\n {}", params.cmd.join(" "));
 
         let (shm_work_dir, file_lock) = Self::create_shm_work_dir();
         let mut shm_work_dir_path = PathBuf::from(&shm_work_dir);
